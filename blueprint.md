@@ -1,23 +1,27 @@
 
-# Visor de Vídeos de YouTube
+# Visor de Vídeos de YouTube con Estilo iOS
 
 ## Descripción General
 
-Esta aplicación permite a los usuarios ver vídeos de YouTube directamente dentro de la aplicación de Flutter. La aplicación utilizará el paquete `youtube_player_flutter` para mostrar el reproductor de vídeo.
+Esta aplicación permite a los usuarios buscar y ver vídeos de YouTube directamente dentro de la aplicación de Flutter, con una interfaz de usuario diseñada para imitar la apariencia nativa de iOS utilizando los widgets de Cupertino.
 
 ## Funcionalidades
 
-*   **Reproductor de YouTube Integrado:** Muestra un reproductor de vídeo de YouTube en la pantalla principal.
-*   **Controles de Reproducción:** Permite a los usuarios reproducir, pausar, y controlar el vídeo.
-*   **Interfaz Sencilla:** Una interfaz de usuario limpia y sencilla con una barra de aplicación y el reproductor de vídeo.
+*   **Búsqueda de Vídeos:** Un campo de texto de estilo iOS permite a los usuarios buscar vídeos.
+*   **Lista de Resultados:** Muestra una lista de vídeos con miniaturas y títulos, con un diseño similar a las listas de iOS.
+*   **Reproducción de Vídeos:** Al tocar un vídeo, se reproduce en el reproductor de YouTube integrado.
+*   **Indicadores Nativos:** Utiliza indicadores de actividad de iOS.
 
 ## Plan Actual
 
-1.  **Agregar Dependencia:** Añadir el paquete `youtube_player_flutter` a `pubspec.yaml`.
-2.  **Crear la Interfaz de Usuario:**
-    *   Crear un `StatefulWidget` para gestionar el estado del reproductor de vídeo.
-    *   Inicializar un `YoutubePlayerController` con una URL de vídeo predeterminada.
-    *   Añadir el widget `YoutubePlayer` al árbol de widgets.
-    *   Diseñar una pantalla simple con un `Scaffold` y un `AppBar`.
-3.  **Verificar y Probar:** Asegurarse de que el código compila sin errores y que el vídeo se reproduce correctamente en el emulador o la web.
-
+1.  **Refactorización a Cupertino:**
+    *   Reemplazar `MaterialApp` con `CupertinoApp`.
+    *   Cambiar `Scaffold` por `CupertinoPageScaffold`.
+    *   Sustituir `AppBar` por `CupertinoNavigationBar`.
+    *   Convertir `TextField` a `CupertinoTextField`.
+    *   Cambiar `ElevatedButton` por `CupertinoButton`.
+    *   Reemplazar `CircularProgressIndicator` por `CupertinoActivityIndicator`.
+    *   Ajustar el diseño de la lista de resultados para que se asemeje al estilo de iOS.
+2.  **Verificación y Pruebas:**
+    *   Asegurarse de que toda la funcionalidad (búsqueda, reproducción) siga funcionando correctamente.
+    *   Verificar que el diseño se vea limpio y nativo en un dispositivo o simulador de iOS.
