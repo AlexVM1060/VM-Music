@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -45,7 +46,9 @@ class _SearchPageState extends State<SearchPage> {
         _videos = searchResult.toList();
       });
     } catch (e) {
-      // Handle search errors
+      _showErrorDialog(
+        'No se pudieron obtener los videos. Inténtalo de nuevo.',
+      );
     } finally {
       setState(() {
         _isLoading = false;
@@ -64,46 +67,71 @@ class _SearchPageState extends State<SearchPage> {
     });
 
     try {
-      // Request storage permission
       var status = await Permission.storage.request();
       if (!status.isGranted) {
-        // Handle permission denial
+        if (mounted) {
+          _showErrorDialog(
+            'Se requiere permiso de almacenamiento para descargar.',
+          );
+        }
         return;
       }
 
-      // Get the audio stream
       final manifest = await _youtubeExplode.videos.streamsClient.getManifest(
         video.id,
       );
       final streamInfo = manifest.audioOnly.withHighestBitrate();
       final stream = _youtubeExplode.videos.streamsClient.get(streamInfo);
 
-      // Get the application documents directory
       final dir = await getApplicationDocumentsDirectory();
       final filePath =
           '${dir.path}/${video.title.replaceAll(r'[/\\:*?"<>|]', '_')}.m4a';
       final file = File(filePath);
 
-      // Download the stream
       final fileStream = file.openWrite();
       await stream.pipe(fileStream);
       await fileStream.flush();
       await fileStream.close();
-    } catch (e) {
-      // Handle download error
+
+      if (mounted) {
+        _showErrorDialog('¡Descarga completa!', title: 'Éxito');
+      }
+    } catch (e, s) {
+      developer.log('Error al descargar', error: e, stackTrace: s);
+      if (mounted) {
+        _showErrorDialog(
+          'Ocurrió un error al descargar el audio. Por favor, inténtalo de nuevo.',
+        );
+      }
     } finally {
-      setState(() {
-        _isDownloading[videoId] = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isDownloading[videoId] = false;
+        });
+      }
     }
+  }
+
+  void _showErrorDialog(String message, {String title = 'Error'}) {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(
-        middle: Text('Buscar en YouTube'),
-      ),
+      navigationBar: const CupertinoNavigationBar(middle: Text('VM Player')),
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),

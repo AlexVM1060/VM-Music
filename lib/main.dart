@@ -1,9 +1,15 @@
+
+import 'dart:developer' as developer;
 import 'package:flutter/cupertino.dart';
 import 'search_page.dart';
 import 'downloads_page.dart';
 
 void main() {
-  runApp(const MyApp());
+  try {
+    runApp(const MyApp());
+  } catch (e, s) {
+    developer.log('Error al iniciar la app', error: e, stackTrace: s);
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -13,7 +19,9 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return const CupertinoApp(
       title: 'YouTube Downloader',
-      theme: CupertinoThemeData(primaryColor: CupertinoColors.systemRed),
+      theme: CupertinoThemeData(
+        primaryColor: CupertinoColors.systemRed,
+      ),
       home: MainTabs(),
     );
   }
@@ -40,23 +48,17 @@ class MainTabs extends StatelessWidget {
       tabBuilder: (BuildContext context, int index) {
         switch (index) {
           case 0:
-            return CupertinoTabView(
-              builder: (context) {
-                return const SearchPage();
-              },
-            );
+            return CupertinoTabView(builder: (context) {
+              return const SearchPage();
+            });
           case 1:
-            return CupertinoTabView(
-              builder: (context) {
-                return const DownloadsPage();
-              },
-            );
+            return CupertinoTabView(builder: (context) {
+              return const DownloadsPage();
+            });
           default:
-            return CupertinoTabView(
-              builder: (context) {
-                return const SearchPage();
-              },
-            );
+            return CupertinoTabView(builder: (context) {
+              return const SearchPage();
+            });
         }
       },
     );
