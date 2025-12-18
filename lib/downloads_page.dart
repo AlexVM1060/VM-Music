@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:just_audio/just_audio.dart';
@@ -20,8 +21,6 @@ class _DownloadsPageState extends State<DownloadsPage> {
   void initState() {
     super.initState();
     _loadSongs();
-    // Listen for tab changes to refresh the list
-    // (This requires a more complex state management, for now we refresh on init)
   }
 
   Future<void> _loadSongs() async {
@@ -41,9 +40,29 @@ class _DownloadsPageState extends State<DownloadsPage> {
       setState(() {
         _currentlyPlaying = p.basenameWithoutExtension(path);
       });
-    } catch (e) {
-      // Handle playback error
+    } catch (e, s) {
+      developer.log('Error al reproducir la canción', error: e, stackTrace: s);
+      if (mounted) {
+        _showErrorDialog(
+            'No se pudo reproducir la canción. El archivo podría estar dañado o en un formato no compatible.');
+      }
     }
+  }
+
+  void _showErrorDialog(String message, {String title = 'Error'}) {
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -124,7 +143,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
               return CupertinoSlider(
                 value: position.inSeconds.toDouble(),
                 min: 0.0,
-                max: duration.inSeconds.toDouble(),
+                max: duration.inSeconds > 0 ? duration.inSeconds.toDouble() : 1.0,
                 onChanged: (value) {
                   _audioPlayer.seek(Duration(seconds: value.toInt()));
                 },

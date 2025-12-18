@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
@@ -46,9 +45,7 @@ class _SearchPageState extends State<SearchPage> {
         _videos = searchResult.toList();
       });
     } catch (e) {
-      _showErrorDialog(
-        'No se pudieron obtener los videos. Inténtalo de nuevo.',
-      );
+      _showErrorDialog('No se pudieron obtener los videos. Inténtalo de nuevo.');
     } finally {
       setState(() {
         _isLoading = false;
@@ -67,25 +64,12 @@ class _SearchPageState extends State<SearchPage> {
     });
 
     try {
-      var status = await Permission.storage.request();
-      if (!status.isGranted) {
-        if (mounted) {
-          _showErrorDialog(
-            'Se requiere permiso de almacenamiento para descargar.',
-          );
-        }
-        return;
-      }
-
-      final manifest = await _youtubeExplode.videos.streamsClient.getManifest(
-        video.id,
-      );
+      final manifest = await _youtubeExplode.videos.streamsClient.getManifest(video.id);
       final streamInfo = manifest.audioOnly.withHighestBitrate();
       final stream = _youtubeExplode.videos.streamsClient.get(streamInfo);
 
       final dir = await getApplicationDocumentsDirectory();
-      final filePath =
-          '${dir.path}/${video.title.replaceAll(r'[/\\:*?"<>|]', '_')}.m4a';
+      final filePath = '${dir.path}/${video.title.replaceAll(r'[/\\:*?"<>|]', '_')}.m4a';
       final file = File(filePath);
 
       final fileStream = file.openWrite();
@@ -100,8 +84,7 @@ class _SearchPageState extends State<SearchPage> {
       developer.log('Error al descargar', error: e, stackTrace: s);
       if (mounted) {
         _showErrorDialog(
-          'Ocurrió un error al descargar el audio. Por favor, inténtalo de nuevo.',
-        );
+            'Ocurrió un error al descargar el audio. Por favor, inténtalo de nuevo.');
       }
     } finally {
       if (mounted) {
