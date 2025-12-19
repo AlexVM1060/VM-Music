@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:myapp/main.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
@@ -24,38 +25,63 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       initialVideoId: widget.videoId,
       flags: const YoutubePlayerFlags(
         autoPlay: true,
-        mute: true, // El audio se maneja por el AudioHandler
+        mute: false, // Solución temporal: Activa el audio del reproductor principal
       ),
-    );
-    _fetchVideoInfoAndPlay();
+    )..addListener(_onPlayerStateChange);
+
+    // Ya no llamamos a la función que da error 403
+    // _fetchVideoInfoAndPlay();
   }
 
-  Future<void> _fetchVideoInfoAndPlay() async {
-    var yt = YoutubeExplode();
-    try {
-      var video = await yt.videos.get(widget.videoId);
-      var manifest = await yt.videos.streamsClient.getManifest(widget.videoId);
-      var audioUrl = manifest.audioOnly.withHighestBitrate().url;
-
-      var mediaItem = MediaItem(
-        id: audioUrl.toString(),
-        title: video.title,
-        artist: video.author,
-        artUri: Uri.parse(video.thumbnails.highResUrl),
-      );
-
-      await audioHandler.addQueueItem(mediaItem);
-      audioHandler.play();
-
-      if (mounted) {
-        setState(() {
-          _videoTitle = video.title;
-        });
-      }
-    } finally {
-      yt.close();
+  void _onPlayerStateChange() {
+    if (_controller.value.isReady && mounted) {
+      setState(() {
+        _videoTitle = _controller.metadata.title;
+      });
     }
   }
+
+  // --- Código para reproducción en segundo plano (DESACTIVADO TEMPORALMENTE) ---
+  // Future<void> _fetchVideoInfoAndPlay() async {
+  //   final yt = YoutubeExplode();
+  //   try {
+  //     final video = await yt.videos.get(widget.videoId);
+  //     final manifest = await yt.videos.streamsClient.getManifest(widget.videoId);
+  //     final audioUrl = manifest.audioOnly.withHighestBitrate().url;
+  //
+  //     final mediaItem = MediaItem(
+  //       id: audioUrl.toString(),
+  //       title: video.title,
+  //       artist: video.author,
+  //       artUri: Uri.parse(video.thumbnails.highResUrl),
+  //     );
+  //
+  //     await audioHandler.addQueueItem(mediaItem);
+  //     audioHandler.play();
+  //
+  //     if (mounted) {
+  //       setState(() {
+  //         _videoTitle = video.title;
+  //       });
+  //     }
+  //   } catch (e, s) {
+  //     developer.log(
+  //       'Error al obtener la información del vídeo.',
+  //       name: 'VideoPlayerPage',
+  //       error: e,
+  //       stackTrace: s,
+  //     );
+  //
+  //     if (mounted) {
+  //       setState(() {
+  //         _videoTitle = 'Error al cargar el vídeo';
+  //       });
+  //     }
+  //   } finally {
+  //     yt.close();
+  //   }
+  // }
+  // --------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -84,9 +110,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   void dispose() {
+    _controller.removeListener(_onPlayerStateChange);
     _controller.dispose();
-    // Detenemos el audio si el usuario sale de la pantalla
-    audioHandler.stop();
+    // Ya no es necesario, el audio se detiene con el reproductor
+    // audioHandler.stop(); 
     super.dispose();
   }
 }

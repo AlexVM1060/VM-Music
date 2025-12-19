@@ -9,6 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations: # Añadido para solucionar el error de MaterialLocalizations
+    sdk: flutter
 
   cupertino_icons: ^1.0.8
   youtube_player_flutter: ^9.1.3
