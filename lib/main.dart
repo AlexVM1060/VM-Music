@@ -4,15 +4,21 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:myapp/audio_handler.dart';
 import 'package:myapp/downloads_page.dart';
 import 'package:myapp/search_page.dart';
+import 'package:myapp/video_player_manager.dart';
+import 'package:myapp/video_player_page.dart';
+import 'package:provider/provider.dart';
 
-// Handler de audio global para acceder desde cualquier parte de la app
 late AudioHandler audioHandler;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Inicializa el servicio de audio y espera a que esté listo
   audioHandler = await initAudioService();
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => VideoPlayerManager(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -22,20 +28,63 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return const CupertinoApp(
       title: 'YouTube Downloader',
-      theme: CupertinoThemeData(primaryColor: CupertinoColors.systemRed),
-      // Añade los delegados de localización para que los widgets de Material funcionen
       localizationsDelegates: [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: [
-        Locale('en', ''), // Inglés
-        Locale('es', ''), // Español
+        Locale('en', ''),
+        Locale('es', ''),
       ],
-      home: MainTabs(),
+      home: AppStructure(),
     );
   }
+}
+
+class AppStructure extends StatelessWidget {
+  const AppStructure({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Stack(
+      children: [
+        MainTabs(),
+        OverlayVideoPlayer(),
+      ],
+    );
+  }
+}
+
+class OverlayVideoPlayer extends StatelessWidget {
+  const OverlayVideoPlayer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<VideoPlayerManager>(
+      builder: (context, manager, child) {
+        if (manager.currentVideoId == null) {
+          return const SizedBox.shrink();
+        }
+        return VideoPlayerPage(videoId: manager.currentVideoId!);
+      },
+    );
+  }
+}
+
+// SOLUCIÓN DEFINITIVA: TabBar invisible. Se elimina 'const' y se añade un
+// comentario para ignorar el aviso del analizador, ya que el constructor
+// de la superclase impide el uso de 'const'.
+// ignore: prefer_const_constructors_in_immutables
+class _EmptyTabBar extends CupertinoTabBar {
+  _EmptyTabBar()
+      : super(items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(icon: SizedBox(), label: ''),
+          BottomNavigationBarItem(icon: SizedBox(), label: ''),
+        ]);
+
+  @override
+  Size get preferredSize => Size.zero;
 }
 
 class MainTabs extends StatelessWidget {
@@ -43,39 +92,31 @@ class MainTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isFullScreen = context.watch<VideoPlayerManager>().isFullScreen;
+
     return CupertinoTabScaffold(
-      tabBar: CupertinoTabBar(
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.search),
-            label: 'Buscar',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.down_arrow),
-            label: 'Descargas',
-          ),
-        ],
-      ),
+      tabBar: isFullScreen
+          ? _EmptyTabBar()
+          : CupertinoTabBar(
+              items: const <BottomNavigationBarItem>[
+                BottomNavigationBarItem(
+                  icon: Icon(CupertinoIcons.search),
+                  label: 'Buscar',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(CupertinoIcons.down_arrow),
+                  label: 'Descargas',
+                ),
+              ],
+            ),
       tabBuilder: (BuildContext context, int index) {
         switch (index) {
           case 0:
-            return CupertinoTabView(
-              builder: (context) {
-                return const SearchPage();
-              },
-            );
+            return CupertinoTabView(builder: (context) => const SearchPage());
           case 1:
-            return CupertinoTabView(
-              builder: (context) {
-                return const DownloadsPage();
-              },
-            );
+            return CupertinoTabView(builder: (context) => const DownloadsPage());
           default:
-            return CupertinoTabView(
-              builder: (context) {
-                return const SearchPage();
-              },
-            );
+            return CupertinoTabView(builder: (context) => const SearchPage());
         }
       },
     );

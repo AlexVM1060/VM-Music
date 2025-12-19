@@ -1,9 +1,10 @@
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
+import 'package:myapp/video_player_manager.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'video_player_page.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -47,15 +48,10 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
+  // AHORA: Llama al VideoPlayerManager para que gestione la reproducción
   void _openVideoPlayer(int index) {
     final videoId = _videos[index].id.value;
-    Navigator.of(context).push(
-      CupertinoPageRoute(
-        builder: (context) => VideoPlayerPage(
-          videoId: videoId,
-        ),
-      ),
-    );
+    Provider.of<VideoPlayerManager>(context, listen: false).play(videoId);
   }
 
   Future<void> _downloadAudio(Video video) async {
