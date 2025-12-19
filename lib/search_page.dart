@@ -1,10 +1,9 @@
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'video_player_page.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -14,7 +13,6 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchPageState extends State<SearchPage> {
-  late final YoutubePlayerController _controller;
   final TextEditingController _textController = TextEditingController();
   final YoutubeExplode _youtubeExplode = YoutubeExplode();
   List<Video> _videos = [];
@@ -24,10 +22,6 @@ class _SearchPageState extends State<SearchPage> {
   @override
   void initState() {
     super.initState();
-    _controller = YoutubePlayerController(
-      initialVideoId: 'iL18_4G62SM', // Default video
-      flags: const YoutubePlayerFlags(autoPlay: false, mute: false),
-    );
   }
 
   Future<void> _searchVideos() async {
@@ -53,8 +47,17 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
-  void _playVideo(String videoId) {
-    _controller.load(videoId);
+  void _openVideoPlayer(int index) {
+    final videoIds = _videos.map((v) => v.id.value).toList();
+    Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (context) => VideoPlayerPage(
+          videoId: videoIds[index],
+          videoIds: videoIds,
+          initialIndex: index,
+        ),
+      ),
+    );
   }
 
   Future<void> _downloadAudio(Video video) async {
@@ -120,17 +123,6 @@ class _SearchPageState extends State<SearchPage> {
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: Column(
             children: [
-              Material(
-                child: YoutubePlayer(
-                  controller: _controller,
-                  showVideoProgressIndicator: true,
-                  progressIndicatorColor: CupertinoColors.systemRed,
-                  progressColors: const ProgressBarColors(
-                    playedColor: CupertinoColors.systemRed,
-                    handleColor: CupertinoColors.systemRed,
-                  ),
-                ),
-              ),
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -160,19 +152,19 @@ class _SearchPageState extends State<SearchPage> {
                           final isCurrentlyDownloading =
                               _isDownloading[videoId] ?? false;
 
-                          return Container(
-                            margin: const EdgeInsets.symmetric(vertical: 8.0),
-                            padding: const EdgeInsets.all(8.0),
-                            decoration: BoxDecoration(
-                              color: CupertinoColors.secondarySystemBackground
-                                  .resolveFrom(context),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              children: [
-                                GestureDetector(
-                                  onTap: () => _playVideo(videoId),
-                                  child: ClipRRect(
+                          return GestureDetector(
+                            onTap: () => _openVideoPlayer(index),
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 8.0),
+                              padding: const EdgeInsets.all(8.0),
+                              decoration: BoxDecoration(
+                                color: CupertinoColors.secondarySystemBackground
+                                    .resolveFrom(context),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                children: [
+                                  ClipRRect(
                                     borderRadius: BorderRadius.circular(8.0),
                                     child: Image.network(
                                       video.thumbnails.mediumResUrl,
@@ -181,45 +173,45 @@ class _SearchPageState extends State<SearchPage> {
                                       fit: BoxFit.cover,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        video.title,
-                                        style: CupertinoTheme.of(context)
-                                            .textTheme
-                                            .textStyle
-                                            .copyWith(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        video.author,
-                                        style: CupertinoTheme.of(
-                                          context,
-                                        ).textTheme.tabLabelTextStyle,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          video.title,
+                                          style: CupertinoTheme.of(context)
+                                              .textTheme
+                                              .textStyle
+                                              .copyWith(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          video.author,
+                                          style: CupertinoTheme.of(
+                                            context,
+                                          ).textTheme.tabLabelTextStyle,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                CupertinoButton(
-                                  onPressed: isCurrentlyDownloading
-                                      ? null
-                                      : () => _downloadAudio(video),
-                                  child: isCurrentlyDownloading
-                                      ? const CupertinoActivityIndicator()
-                                      : const Icon(CupertinoIcons.down_arrow),
-                                ),
-                              ],
+                                  CupertinoButton(
+                                    onPressed: isCurrentlyDownloading
+                                        ? null
+                                        : () => _downloadAudio(video),
+                                    child: isCurrentlyDownloading
+                                        ? const CupertinoActivityIndicator()
+                                        : const Icon(CupertinoIcons.down_arrow),
+                                  ),
+                                ],
+                              ),
                             ),
                           );
                         },
@@ -234,7 +226,6 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   void dispose() {
-    _controller.dispose();
     _textController.dispose();
     _youtubeExplode.close();
     super.dispose();
