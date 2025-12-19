@@ -1,8 +1,9 @@
 import 'package:audio_service/audio_service.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:myapp/audio_handler.dart';
 import 'package:myapp/downloads_page.dart';
+import 'package:myapp/router.dart'; // Importa la configuración del router
 import 'package:myapp/search_page.dart';
 import 'package:myapp/video_player_manager.dart';
 import 'package:myapp/video_player_page.dart';
@@ -14,11 +15,24 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   audioHandler = await initAudioService();
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => VideoPlayerManager(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => VideoPlayerManager()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+      ],
       child: const MyApp(),
     ),
   );
+}
+
+class ThemeProvider with ChangeNotifier {
+  ThemeMode _themeMode = ThemeMode.system;
+  ThemeMode get themeMode => _themeMode;
+
+  void toggleTheme() {
+    _themeMode = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+    notifyListeners();
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -26,24 +40,43 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const CupertinoApp(
-      title: 'YouTube Downloader',
-      localizationsDelegates: [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: [
-        Locale('en', ''),
-        Locale('es', ''),
-      ],
-      home: AppStructure(),
+    const primarySeedColor = Colors.deepPurple;
+
+    final lightTheme = ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: primarySeedColor,
+        brightness: Brightness.light,
+      ),
+      textTheme: GoogleFonts.robotoTextTheme(),
+    );
+
+    final darkTheme = ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: primarySeedColor,
+        brightness: Brightness.dark,
+      ),
+      textTheme: GoogleFonts.robotoTextTheme(ThemeData(brightness: Brightness.dark).textTheme),
+    );
+
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        // Cambia a MaterialApp.router y usa la configuración de go_router
+        return MaterialApp.router(
+          routerConfig: router, // Asigna el router importado
+          title: 'VM Player',
+          theme: lightTheme,
+          darkTheme: darkTheme,
+          themeMode: themeProvider.themeMode,
+        );
+      },
     );
   }
 }
 
-class AppStructure extends StatelessWidget {
-  const AppStructure({super.key});
+class AppShell extends StatelessWidget {
+  const AppShell({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -72,53 +105,54 @@ class OverlayVideoPlayer extends StatelessWidget {
   }
 }
 
-// SOLUCIÓN DEFINITIVA: TabBar invisible. Se elimina 'const' y se añade un
-// comentario para ignorar el aviso del analizador, ya que el constructor
-// de la superclase impide el uso de 'const'.
-// ignore: prefer_const_constructors_in_immutables
-class _EmptyTabBar extends CupertinoTabBar {
-  _EmptyTabBar()
-      : super(items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(icon: SizedBox(), label: ''),
-          BottomNavigationBarItem(icon: SizedBox(), label: ''),
-        ]);
+class MainTabs extends StatefulWidget {
+  const MainTabs({super.key});
 
   @override
-  Size get preferredSize => Size.zero;
+  State<MainTabs> createState() => _MainTabsState();
 }
 
-class MainTabs extends StatelessWidget {
-  const MainTabs({super.key});
+class _MainTabsState extends State<MainTabs> {
+  int _selectedIndex = 0;
+
+  static const List<Widget> _pages = <Widget>[
+    SearchPage(),
+    DownloadsPage(),
+  ];
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final isFullScreen = context.watch<VideoPlayerManager>().isFullScreen;
+    final themeProvider = Provider.of<ThemeProvider>(context);
 
-    return CupertinoTabScaffold(
-      tabBar: isFullScreen
-          ? _EmptyTabBar()
-          : CupertinoTabBar(
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('VM Player', style: GoogleFonts.oswald(fontWeight: FontWeight.bold, fontSize: 24)),
+        actions: [
+          IconButton(
+            icon: Icon(themeProvider.themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode),
+            onPressed: () => themeProvider.toggleTheme(),
+            tooltip: 'Cambiar tema',
+          ),
+        ],
+      ),
+      body: _pages.elementAt(_selectedIndex),
+      bottomNavigationBar: isFullScreen
+          ? null
+          : BottomNavigationBar(
               items: const <BottomNavigationBarItem>[
-                BottomNavigationBarItem(
-                  icon: Icon(CupertinoIcons.search),
-                  label: 'Buscar',
-                ),
-                BottomNavigationBarItem(
-                  icon: Icon(CupertinoIcons.down_arrow),
-                  label: 'Descargas',
-                ),
+                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'),
+                BottomNavigationBarItem(icon: Icon(Icons.download), label: 'Descargas'),
               ],
+              currentIndex: _selectedIndex,
+              onTap: _onItemTapped,
             ),
-      tabBuilder: (BuildContext context, int index) {
-        switch (index) {
-          case 0:
-            return CupertinoTabView(builder: (context) => const SearchPage());
-          case 1:
-            return CupertinoTabView(builder: (context) => const DownloadsPage());
-          default:
-            return CupertinoTabView(builder: (context) => const SearchPage());
-        }
-      },
     );
   }
 }

@@ -28,7 +28,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   void _onPlayerChange() {
     final manager = Provider.of<VideoPlayerManager>(context, listen: false);
-    if (manager.isFullScreen != _controller.value.isFullScreen) {
+    if (mounted && manager.isFullScreen != _controller.value.isFullScreen) {
       manager.setFullScreen(_controller.value.isFullScreen);
     }
   }
@@ -61,14 +61,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           elevation: 8.0,
           child: _buildMinimizedLayout(minimizedWidth, minimizedHeight),
         ),
-        // SOLUCIÓN: Permite arrastrar solo si está minimizado.
         maxSimultaneousDrags: isMinimized ? 1 : 0,
         onDragEnd: (details) {
           final size = MediaQuery.of(context).size;
           double dx = details.offset.dx;
           double dy = details.offset.dy;
 
-          // MEJORA: Evita que el reproductor se arrastre fuera de la pantalla.
           if (dx < 0) dx = 0;
           if (dx > size.width - minimizedWidth) dx = size.width - minimizedWidth;
           if (dy < 0) dy = 0;
@@ -80,7 +78,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             _dragOffset = Offset(dx, dy);
           });
         },
-        // SOLUCIÓN: El argumento 'child' ahora está al final.
         child: _buildPlayerContent(isMinimized, minimizedWidth, minimizedHeight),
       ),
     );
@@ -132,14 +129,27 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                         color: Colors.white, size: 30),
                   ),
                 ),
+                if (_controller.value.isFullScreen)
+                  Positioned(
+                    bottom: 20,
+                    right: 20,
+                    child: CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      onPressed: () {
+                        _controller.toggleFullScreenMode();
+                      },
+                      child: const Icon(Icons.fullscreen_exit, color: Colors.white, size: 30),
+                    ),
+                  ),
               ],
             ),
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
                 _controller.metadata.title,
-                style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(
-                    fontWeight: FontWeight.bold, fontSize: 18),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -164,6 +174,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               padding: const EdgeInsets.all(4),
               onPressed: manager.close,
               child: const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            child: CupertinoButton(
+              padding: const EdgeInsets.all(4),
+              onPressed: manager.maximize,
+              child: const Icon(Icons.open_in_full, color: Colors.white, size: 20),
             ),
           ),
         ],
