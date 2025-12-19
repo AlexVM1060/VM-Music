@@ -17,6 +17,7 @@ dependencies:
   just_audio: ^0.10.5
   permission_handler: ^12.0.1
   path: ^1.9.1
+  audio_service: ^0.18.18
 
 dev_dependencies:
   flutter_test:

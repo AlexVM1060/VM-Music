@@ -24,32 +24,44 @@ class _DownloadsPageState extends State<DownloadsPage> {
   }
 
   Future<void> _loadSongs() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final directory = Directory(dir.path);
-    final allFiles = directory.listSync();
-
-    setState(() {
-      _songs = allFiles.where((file) => file.path.endsWith('.m4a')).toList();
-    });
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final directory = Directory(dir.path);
+      final allFiles = directory.listSync();
+      if (mounted) {
+        setState(() {
+          _songs = allFiles.where((file) => file.path.endsWith('.m4a')).toList();
+        });
+      }
+    } catch (e, s) {
+      developer.log('Error al cargar las canciones', error: e, stackTrace: s);
+    }
   }
 
   Future<void> _playSong(String path) async {
     try {
-      await _audioPlayer.setAudioSource(AudioSource.file(path));
-      _audioPlayer.play();
-      setState(() {
-        _currentlyPlaying = p.basenameWithoutExtension(path);
-      });
+      if (_audioPlayer.playing && _audioPlayer.audioSource?.toString().contains(path) == true) {
+        await _audioPlayer.pause();
+      } else {
+        await _audioPlayer.setAudioSource(AudioSource.file(path));
+        _audioPlayer.play();
+        if (mounted) {
+          setState(() {
+            _currentlyPlaying = p.basenameWithoutExtension(path);
+          });
+        }
+      }
     } catch (e, s) {
       developer.log('Error al reproducir la canción', error: e, stackTrace: s);
       if (mounted) {
         _showErrorDialog(
-            'No se pudo reproducir la canción. El archivo podría estar dañado o en un formato no compatible.');
+            'No se pudo reproducir la canción. El archivo podría estar dañado.');
       }
     }
   }
 
   void _showErrorDialog(String message, {String title = 'Error'}) {
+    if (!mounted) return;
     showCupertinoDialog(
       context: context,
       builder: (context) => CupertinoAlertDialog(
@@ -78,7 +90,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
         middle: const Text('Mis Descargas'),
         trailing: CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: _loadSongs, // Refresh button
+          onPressed: _loadSongs,
           child: const Icon(CupertinoIcons.refresh),
         ),
       ),
@@ -128,9 +140,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
         children: [
           Text(
             _currentlyPlaying ?? 'Ninguna canción seleccionada',
-            style: CupertinoTheme.of(
-              context,
-            ).textTheme.textStyle.copyWith(fontWeight: FontWeight.bold),
+            style: CupertinoTheme.of(context).textTheme.textStyle.copyWith(fontWeight: FontWeight.bold),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -141,7 +151,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
               final position = snapshot.data ?? Duration.zero;
               final duration = _audioPlayer.duration ?? Duration.zero;
               return CupertinoSlider(
-                value: position.inSeconds.toDouble(),
+                value: position.inSeconds.toDouble().clamp(0.0, duration.inSeconds.toDouble()),
                 min: 0.0,
                 max: duration.inSeconds > 0 ? duration.inSeconds.toDouble() : 1.0,
                 onChanged: (value) {
@@ -156,12 +166,11 @@ class _DownloadsPageState extends State<DownloadsPage> {
               final playerState = snapshot.data;
               final processingState = playerState?.processingState;
               final playing = playerState?.playing;
-              if (processingState == ProcessingState.loading ||
-                  processingState == ProcessingState.buffering) {
+              if (processingState == ProcessingState.loading || processingState == ProcessingState.buffering) {
                 return const CupertinoActivityIndicator();
               } else if (playing != true) {
                 return CupertinoButton(
-                  onPressed: _audioPlayer.play,
+                  onPressed: () => _playSong(_audioPlayer.audioSource?.toString() ?? ''),
                   child: const Icon(CupertinoIcons.play_arrow_solid, size: 40),
                 );
               } else if (processingState != ProcessingState.completed) {
@@ -170,7 +179,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
                   child: const Icon(CupertinoIcons.pause_solid, size: 40),
                 );
               } else {
-                return const Icon(CupertinoIcons.play_arrow_solid, size: 40);
+                return CupertinoButton(
+                    onPressed: () => _audioPlayer.seek(Duration.zero),
+                    child: const Icon(CupertinoIcons.refresh, size: 40));
               }
             },
           ),
@@ -180,7 +191,6 @@ class _DownloadsPageState extends State<DownloadsPage> {
   }
 }
 
-// A simple CupertinoListTile as it's not available in the default library
 class CupertinoListTile extends StatelessWidget {
   final Widget title;
   final Widget? leading;

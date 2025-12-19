@@ -48,13 +48,11 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   void _openVideoPlayer(int index) {
-    final videoIds = _videos.map((v) => v.id.value).toList();
+    final videoId = _videos[index].id.value;
     Navigator.of(context).push(
       CupertinoPageRoute(
         builder: (context) => VideoPlayerPage(
-          videoId: videoIds[index],
-          videoIds: videoIds,
-          initialIndex: index,
+          videoId: videoId,
         ),
       ),
     );

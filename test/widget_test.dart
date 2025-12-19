@@ -1,30 +1,32 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:myapp/audio_handler.dart';
 import 'package:myapp/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
+  // Inicializa el AudioHandler antes de que se ejecuten los tests,
+  // ya que la app depende de que esta variable global esté inicializada.
+  setUpAll(() async {
+    audioHandler = await initAudioService();
+  });
+
+  testWidgets('Muestra las pestañas Buscar y Descargas', (WidgetTester tester) async {
+    // Construye la app y renderiza un frame.
     await tester.pumpWidget(const MyApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // Espera a que la UI se estabilice.
+    await tester.pumpAndSettle();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    // Verifica que la barra de pestañas está presente.
+    expect(find.byType(CupertinoTabScaffold), findsOneWidget);
+    expect(find.byType(CupertinoTabBar), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Verifica que las pestañas "Buscar" y "Descargas" existen.
+    expect(find.text('Buscar'), findsOneWidget);
+    expect(find.text('Descargas'), findsOneWidget);
+
+    // Verifica que los iconos de búsqueda y descarga están presentes.
+    expect(find.byIcon(CupertinoIcons.search), findsOneWidget);
+    expect(find.byIcon(CupertinoIcons.down_arrow), findsOneWidget);
   });
 }

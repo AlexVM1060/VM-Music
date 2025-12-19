@@ -1,14 +1,17 @@
-import 'dart:developer' as developer;
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/cupertino.dart';
-import 'search_page.dart';
-import 'downloads_page.dart';
+import 'package:myapp/audio_handler.dart';
+import 'package:myapp/search_page.dart';
+import 'package:myapp/downloads_page.dart';
 
-void main() {
-  try {
-    runApp(const MyApp());
-  } catch (e, s) {
-    developer.log('Error al iniciar la app', error: e, stackTrace: s);
-  }
+// Handler de audio global para acceder desde cualquier parte de la app
+late AudioHandler audioHandler;
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Inicializa el servicio de audio y espera a que esté listo
+  audioHandler = await initAudioService();
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {

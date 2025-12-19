@@ -1,4 +1,3 @@
-
 # YouTube Music Downloader - Estilo iOS
 
 ## Descripción General
@@ -16,22 +15,24 @@ Esta aplicación permite a los usuarios buscar vídeos de YouTube, descargarlos 
 
 ## Plan Actual
 
-1.  **Reestructurar la UI para Pestañas:**
-    *   Añadir los paquetes `path_provider`, `just_audio` y `permission_handler` a `pubspec.yaml`.
-    *   Convertir la estructura principal a un `CupertinoTabScaffold`.
-    *   Crear dos archivos separados: `search_page.dart` para la búsqueda y `downloads_page.dart` para las descargas.
-    *   Mover la lógica de búsqueda existente a `search_page.dart`.
+El objetivo es rediseñar completamente la experiencia de reproducción de vídeo para que se asemeje a la de YouTube e incluya la capacidad de reproducción de audio en segundo plano.
 
-2.  **Implementar Funcionalidad de Descarga:**
-    *   Añadir un botón de descarga a cada elemento de la lista en `search_page.dart`.
-    *   Al pulsar, usar `youtube_explode_dart` para obtener el stream de audio.
-    *   Usar `path_provider` para determinar la ruta de guardado.
-    *   Gestionar el proceso de descarga y guardado del archivo.
-    *   Mostrar un indicador de progreso de descarga.
+1.  **Añadir Dependencias Clave:**
+    *   `youtube_player_flutter:` Para la interfaz del reproductor de vídeo.
+    *   `audio_service` & `just_audio:` Para la gestión del audio en segundo plano.
+    *   `youtube_explode_dart:` Para extraer los datos y streams del vídeo.
 
-3.  **Construir la Pantalla de Descargas (`downloads_page.dart`):**
-    *   Al iniciar, escanear el directorio de la aplicación para encontrar archivos de audio (`.m4a`).
-    *   Mostrar los archivos encontrados en una lista.
-    *   Implementar un reproductor de audio usando `just_audio`.
-    *   Al tocar un archivo, cargarlo en el reproductor y comenzar la reproducción.
-    *   Diseñar una UI para el reproductor (play/pause, barra de progreso, título).
+2.  **Configurar Plataformas para Background Playback:**
+    *   **iOS:** Añadir `UIBackgroundModes` (`audio`) al archivo `Info.plist`.
+    *   **Android:** Añadir el permiso `WAKE_LOCK` y declarar el servicio de `audio_service` en el `AndroidManifest.xml`.
+
+3.  **Implementar un `AudioHandler` para `audio_service`:**
+    *   Crear un servicio (`lib/audio_handler.dart`) que gestione la lógica del reproductor `just_audio` (cargar, reproducir, pausar, buscar) y comunique su estado al sistema operativo para los controles de la pantalla de bloqueo.
+
+4.  **Reconstruir la Pantalla del Reproductor (`video_player_page.dart`):**
+    *   Usar `youtube_explode_dart` para obtener el título del vídeo y la URL del stream de audio de mayor calidad.
+    *   Inicializar el `AudioHandler` para que comience a reproducir el stream de audio en segundo plano.
+    *   Implementar el widget `YoutubePlayer` en la parte superior de la pantalla para la visualización del vídeo.
+    *   Asegurarse de que el `YoutubePlayer` esté silenciado (`mute: true`) para que no haya doble audio, ya que `audio_service` se encargará del sonido.
+    *   Mostrar el título del vídeo debajo del reproductor.
+    *   El widget `YoutubePlayer` proporcionará de forma nativa los controles de reproducción y el botón de pantalla completa.
