@@ -1,7 +1,10 @@
+import 'dart:developer';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:myapp/video_player_manager.dart';
 import 'package:provider/provider.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 class VideoPlayerPage extends StatefulWidget {
@@ -16,6 +19,8 @@ class VideoPlayerPage extends StatefulWidget {
 class _VideoPlayerPageState extends State<VideoPlayerPage> {
   late YoutubePlayerController _controller;
   Offset _dragOffset = const Offset(200, 400);
+  final _ytExplode = YoutubeExplode();
+  List<Video> _relatedVideos = [];
 
   @override
   void initState() {
@@ -24,6 +29,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       initialVideoId: widget.videoId,
       flags: const YoutubePlayerFlags(autoPlay: true, mute: false),
     )..addListener(_onPlayerChange);
+    _fetchRelatedVideos();
+  }
+
+  Future<void> _fetchRelatedVideos() async {
+    try {
+      final video = await _ytExplode.videos.get(VideoId(widget.videoId));
+      final relatedVideos = await _ytExplode.videos.getRelatedVideos(video);
+
+      if (mounted) {
+        setState(() {
+          _relatedVideos = relatedVideos?.toList() ?? [];
+        });
+      }
+    } catch (e) {
+      log('Error fetching related videos: $e');
+    }
   }
 
   void _onPlayerChange() {
@@ -38,6 +59,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.videoId != widget.videoId) {
       _controller.load(widget.videoId);
+      _fetchRelatedVideos();
     }
   }
 
@@ -67,9 +89,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           double dx = details.offset.dx;
           double dy = details.offset.dy;
 
-          if (dx < 0) dx = 0;
-          if (dx > size.width - minimizedWidth) dx = size.width - minimizedWidth;
-          if (dy < 0) dy = 0;
+          if (dx < 0) {
+            dx = 0;
+          }
+          if (dx > size.width - minimizedWidth) {
+            dx = size.width - minimizedWidth;
+          }
+          if (dy < 0) {
+            dy = 0;
+          }
           if (dy > size.height - minimizedHeight) {
             dy = size.height - minimizedHeight;
           }
@@ -78,7 +106,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             _dragOffset = Offset(dx, dy);
           });
         },
-        child: _buildPlayerContent(isMinimized, minimizedWidth, minimizedHeight),
+        child:
+            _buildPlayerContent(isMinimized, minimizedWidth, minimizedHeight),
       ),
     );
   }
@@ -138,7 +167,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                       onPressed: () {
                         _controller.toggleFullScreenMode();
                       },
-                      child: const Icon(Icons.fullscreen_exit, color: Colors.white, size: 30),
+                      child: const Icon(Icons.fullscreen_exit,
+                          color: Colors.white, size: 30),
                     ),
                   ),
               ],
@@ -147,9 +177,56 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               padding: const EdgeInsets.all(16.0),
               child: Text(
                 _controller.metadata.title,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              child: Text(
+                'Related Videos',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _relatedVideos.length,
+                itemBuilder: (context, index) {
+                  final video = _relatedVideos[index];
+                  return InkWell(
+                    onTap: () {
+                      final manager = Provider.of<VideoPlayerManager>(context,
+                          listen: false);
+                      manager.play(video.id.value);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16.0, vertical: 8.0),
+                      child: Row(
+                        children: [
+                          Image.network(
+                            video.thumbnails.mediumResUrl,
+                            width: 120,
+                            height: 67.5,
+                            fit: BoxFit.cover,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              video.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -166,14 +243,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          YoutubePlayer(controller: _controller, showVideoProgressIndicator: false),
+          YoutubePlayer(
+              controller: _controller, showVideoProgressIndicator: false),
           Positioned(
             top: 0,
             right: 0,
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
               onPressed: manager.close,
-              child: const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
+              child: const Icon(CupertinoIcons.xmark,
+                  color: Colors.white, size: 20),
             ),
           ),
           Positioned(
@@ -182,7 +261,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
               onPressed: manager.maximize,
-              child: const Icon(Icons.open_in_full, color: Colors.white, size: 20),
+              child:
+                  const Icon(Icons.open_in_full, color: Colors.white, size: 20),
             ),
           ),
         ],
@@ -194,6 +274,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void dispose() {
     _controller.removeListener(_onPlayerChange);
     _controller.dispose();
+    _ytExplode.close();
     super.dispose();
   }
 }
