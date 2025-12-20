@@ -1,13 +1,13 @@
+import 'dart:async';
 import 'dart:developer';
 
+import 'package:chewie/chewie.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:myapp/video_player_manager.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 class VideoPlayerPage extends StatefulWidget {
   final String videoId;
@@ -19,30 +19,68 @@ class VideoPlayerPage extends StatefulWidget {
 }
 
 class _VideoPlayerPageState extends State<VideoPlayerPage> {
-  late YoutubePlayerController _controller;
-  Offset _dragOffset = const Offset(200, 400);
+  VideoPlayerController? _videoPlayerController;
+  ChewieController? _chewieController;
   final _ytExplode = YoutubeExplode();
   List<Video> _relatedVideos = [];
   String _videoTitle = '';
+  Offset _dragOffset = const Offset(200, 400);
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _controller = YoutubePlayerController(
-      params: const YoutubePlayerParams(
-        showControls: true,
-        showFullscreenButton: true,
-        playsInline: false, // Needed for iOS PiP
-      ),
-    );
+    _initializePlayer();
+  }
 
-    _controller.loadVideoById(videoId: widget.videoId);
-    _controller.playVideo(); // Autoplay
+  Future<void> _initializePlayer() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+    });
 
-    _controller.setFullScreenListener(_onFullScreenChange);
+    try {
+      final manifest = await _ytExplode.videos.streamsClient.getManifest(widget.videoId);
+      final streamInfo = manifest.muxed.withHighestBitrate();
 
-    _fetchRelatedVideos();
-    _fetchVideoTitle();
+      if (streamInfo.url.toString().isEmpty) {
+        throw Exception('No valid stream URL found');
+      }
+
+      _videoPlayerController = VideoPlayerController.networkUrl(streamInfo.url);
+      await _videoPlayerController?.initialize();
+
+      if (mounted) {
+        _chewieController = ChewieController(
+          videoPlayerController: _videoPlayerController!,
+          autoPlay: true,
+          looping: false,
+          aspectRatio: 16 / 9,
+          allowFullScreen: true,
+          allowedScreenSleep: false,
+          autoInitialize: true,
+        );
+
+        setState(() {
+          _isLoading = false;
+        });
+
+        _fetchRelatedVideos();
+        _fetchVideoTitle();
+      }
+    } catch (e) {
+      log('Error initializing player: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al reproducir el video: $e')),
+        );
+        // Cierra el reproductor si hay un error de inicialización
+        Provider.of<VideoPlayerManager>(context, listen: false).close();
+      }
+    }
   }
 
   Future<void> _fetchVideoTitle() async {
@@ -72,40 +110,48 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
   }
 
-  void _onFullScreenChange(bool isFullScreen) {
-    final manager = Provider.of<VideoPlayerManager>(context, listen: false);
-    if (mounted && manager.isFullScreen != isFullScreen) {
-      manager.setFullScreen(isFullScreen);
-    }
-  }
-
   @override
   void didUpdateWidget(covariant VideoPlayerPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.videoId != widget.videoId) {
-      _controller.loadVideoById(videoId: widget.videoId);
-      _fetchRelatedVideos();
-      _fetchVideoTitle();
+      _disposeControllers();
+      _initializePlayer();
     }
   }
 
-  Future<void> enterPictureInPictureMode() async {
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      try {
-        await SystemChannels.platform.invokeMethod('SystemChrome.enterPictureInPictureMode');
-      } on PlatformException catch (e) {
-        log("Error entering PiP mode: ${e.message}");
-      }
-    }
+  void _disposeControllers() {
+    _videoPlayerController?.dispose();
+    _chewieController?.dispose();
   }
 
   @override
+  void dispose() {
+    _disposeControllers();
+    _ytExplode.close();
+    super.dispose();
+  }
+
+ @override
   Widget build(BuildContext context) {
     final manager = Provider.of<VideoPlayerManager>(context);
     final isMinimized = manager.isMinimized;
 
-    const double minimizedWidth = 200.0;
-    const double minimizedHeight = 112.5;
+    const double minimizedWidth = 250.0;
+    const double minimizedHeight = 140.6;
+
+    // Si está cargando y no está minimizado, muestra el indicador de carga
+    if (_isLoading && !isMinimized) {
+      return const Scaffold(
+        body: Center(
+          child: CupertinoActivityIndicator(),
+        ),
+      );
+    }
+
+    // Si hubo un error y no hay controlador, no muestra nada.
+    if (_chewieController == null) {
+      return const SizedBox.shrink();
+    }
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
@@ -126,26 +172,20 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           double dy = details.offset.dy;
 
           if (dx < 0) dx = 0;
-          if (dx > size.width - minimizedWidth) {
-            dx = size.width - minimizedWidth;
-          }
+          if (dx > size.width - minimizedWidth) dx = size.width - minimizedWidth;
           if (dy < 0) dy = 0;
-          if (dy > size.height - minimizedHeight) {
-            dy = size.height - minimizedHeight;
-          }
+          if (dy > size.height - minimizedHeight) dy = size.height - minimizedHeight;
 
           setState(() {
             _dragOffset = Offset(dx, dy);
           });
         },
-        child:
-            _buildPlayerContent(isMinimized, minimizedWidth, minimizedHeight),
+        child: _buildPlayerContent(isMinimized, minimizedWidth, minimizedHeight),
       ),
     );
   }
 
-  Widget _buildPlayerContent(
-      bool isMinimized, double minWidth, double minHeight) {
+  Widget _buildPlayerContent(bool isMinimized, double minWidth, double minHeight) {
     final manager = Provider.of<VideoPlayerManager>(context, listen: false);
     final screenSize = MediaQuery.of(context).size;
 
@@ -158,9 +198,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         height: isMinimized ? minHeight : screenSize.height,
         child: Material(
           elevation: 4.0,
-          child: isMinimized
-              ? _buildMinimizedLayout(minWidth, minHeight)
-              : _buildMaximizedLayout(),
+          child: isMinimized ? _buildMinimizedLayout(minWidth, minHeight) : _buildMaximizedLayout(),
         ),
       ),
     );
@@ -175,9 +213,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           children: [
             Stack(
               children: [
-                YoutubePlayer(
-                  controller: _controller,
+                AspectRatio(
                   aspectRatio: 16 / 9,
+                  child: Chewie(controller: _chewieController!),
                 ),
                 Positioned(
                   top: 8,
@@ -185,32 +223,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   child: CupertinoButton(
                     padding: EdgeInsets.zero,
                     onPressed: manager.minimize,
-                    child: const Icon(CupertinoIcons.chevron_down,
-                        color: Colors.white, size: 30),
+                    child: const Icon(CupertinoIcons.chevron_down, color: Colors.white, size: 30),
                   ),
                 ),
-                // Show PiP button only on Android
-                if (defaultTargetPlatform == TargetPlatform.android)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: CupertinoButton(
-                      padding: EdgeInsets.zero,
-                      onPressed: enterPictureInPictureMode,
-                      child: const Icon(Icons.picture_in_picture_alt,
-                          color: Colors.white, size: 30),
-                    ),
-                  ),
               ],
             ),
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
                 _videoTitle,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -229,13 +251,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   final video = _relatedVideos[index];
                   return InkWell(
                     onTap: () {
-                      final manager =
-                          Provider.of<VideoPlayerManager>(context, listen: false);
                       manager.play(video.id.value);
                     },
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16.0, vertical: 8.0),
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                       child: Row(
                         children: [
                           Image.network(
@@ -273,15 +292,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          YoutubePlayer(controller: _controller),
+          Chewie(controller: _chewieController!),
           Positioned(
             top: 0,
             right: 0,
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
               onPressed: manager.close,
-              child: const Icon(CupertinoIcons.xmark,
-                  color: Colors.white, size: 20),
+              child: const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
             ),
           ),
           Positioned(
@@ -290,19 +308,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
               onPressed: manager.maximize,
-              child:
-                  const Icon(Icons.open_in_full, color: Colors.white, size: 20),
+              child: const Icon(Icons.open_in_full, color: Colors.white, size: 20),
             ),
           ),
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _controller.close();
-    _ytExplode.close();
-    super.dispose();
   }
 }
