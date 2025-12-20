@@ -1,11 +1,13 @@
 import 'dart:developer';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:myapp/video_player_manager.dart';
 import 'package:provider/provider.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
 class VideoPlayerPage extends StatefulWidget {
   final String videoId;
@@ -21,22 +23,45 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   Offset _dragOffset = const Offset(200, 400);
   final _ytExplode = YoutubeExplode();
   List<Video> _relatedVideos = [];
+  String _videoTitle = '';
 
   @override
   void initState() {
     super.initState();
     _controller = YoutubePlayerController(
-      initialVideoId: widget.videoId,
-      flags: const YoutubePlayerFlags(autoPlay: true, mute: false),
-    )..addListener(_onPlayerChange);
+      params: const YoutubePlayerParams(
+        showControls: true,
+        showFullscreenButton: true,
+        playsInline: false, // Needed for iOS PiP
+      ),
+    );
+
+    _controller.loadVideoById(videoId: widget.videoId);
+    _controller.playVideo(); // Autoplay
+
+    _controller.setFullScreenListener(_onFullScreenChange);
+
     _fetchRelatedVideos();
+    _fetchVideoTitle();
+  }
+
+  Future<void> _fetchVideoTitle() async {
+    try {
+      final video = await _ytExplode.videos.get(VideoId(widget.videoId));
+      if (mounted) {
+        setState(() {
+          _videoTitle = video.title;
+        });
+      }
+    } catch (e) {
+      log('Error fetching video title: $e');
+    }
   }
 
   Future<void> _fetchRelatedVideos() async {
     try {
       final video = await _ytExplode.videos.get(VideoId(widget.videoId));
       final relatedVideos = await _ytExplode.videos.getRelatedVideos(video);
-
       if (mounted) {
         setState(() {
           _relatedVideos = relatedVideos?.toList() ?? [];
@@ -47,10 +72,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     }
   }
 
-  void _onPlayerChange() {
+  void _onFullScreenChange(bool isFullScreen) {
     final manager = Provider.of<VideoPlayerManager>(context, listen: false);
-    if (mounted && manager.isFullScreen != _controller.value.isFullScreen) {
-      manager.setFullScreen(_controller.value.isFullScreen);
+    if (mounted && manager.isFullScreen != isFullScreen) {
+      manager.setFullScreen(isFullScreen);
     }
   }
 
@@ -58,8 +83,19 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void didUpdateWidget(covariant VideoPlayerPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.videoId != widget.videoId) {
-      _controller.load(widget.videoId);
+      _controller.loadVideoById(videoId: widget.videoId);
       _fetchRelatedVideos();
+      _fetchVideoTitle();
+    }
+  }
+
+  Future<void> enterPictureInPictureMode() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        await SystemChannels.platform.invokeMethod('SystemChrome.enterPictureInPictureMode');
+      } on PlatformException catch (e) {
+        log("Error entering PiP mode: ${e.message}");
+      }
     }
   }
 
@@ -89,15 +125,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           double dx = details.offset.dx;
           double dy = details.offset.dy;
 
-          if (dx < 0) {
-            dx = 0;
-          }
+          if (dx < 0) dx = 0;
           if (dx > size.width - minimizedWidth) {
             dx = size.width - minimizedWidth;
           }
-          if (dy < 0) {
-            dy = 0;
-          }
+          if (dy < 0) dy = 0;
           if (dy > size.height - minimizedHeight) {
             dy = size.height - minimizedHeight;
           }
@@ -145,8 +177,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               children: [
                 YoutubePlayer(
                   controller: _controller,
-                  showVideoProgressIndicator: true,
-                  onReady: () => _controller.play(),
+                  aspectRatio: 16 / 9,
                 ),
                 Positioned(
                   top: 8,
@@ -158,16 +189,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                         color: Colors.white, size: 30),
                   ),
                 ),
-                if (_controller.value.isFullScreen)
+                // Show PiP button only on Android
+                if (defaultTargetPlatform == TargetPlatform.android)
                   Positioned(
-                    bottom: 20,
-                    right: 20,
+                    top: 8,
+                    right: 8,
                     child: CupertinoButton(
                       padding: EdgeInsets.zero,
-                      onPressed: () {
-                        _controller.toggleFullScreenMode();
-                      },
-                      child: const Icon(Icons.fullscreen_exit,
+                      onPressed: enterPictureInPictureMode,
+                      child: const Icon(Icons.picture_in_picture_alt,
                           color: Colors.white, size: 30),
                     ),
                   ),
@@ -176,7 +206,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Text(
-                _controller.metadata.title,
+                _videoTitle,
                 style: Theme.of(context)
                     .textTheme
                     .titleLarge
@@ -199,8 +229,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                   final video = _relatedVideos[index];
                   return InkWell(
                     onTap: () {
-                      final manager = Provider.of<VideoPlayerManager>(context,
-                          listen: false);
+                      final manager =
+                          Provider.of<VideoPlayerManager>(context, listen: false);
                       manager.play(video.id.value);
                     },
                     child: Padding(
@@ -243,8 +273,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          YoutubePlayer(
-              controller: _controller, showVideoProgressIndicator: false),
+          YoutubePlayer(controller: _controller),
           Positioned(
             top: 0,
             right: 0,
@@ -272,8 +301,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
 
   @override
   void dispose() {
-    _controller.removeListener(_onPlayerChange);
-    _controller.dispose();
+    _controller.close();
     _ytExplode.close();
     super.dispose();
   }
