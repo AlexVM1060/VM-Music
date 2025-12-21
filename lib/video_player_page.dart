@@ -29,6 +29,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
 
   late final VideoPlayerManager _manager;
 
+  List<MuxedStreamInfo> _muxedStreamInfos = [];
+  MuxedStreamInfo? _selectedStreamInfo;
+
   @override
   void initState() {
     super.initState();
@@ -57,43 +60,27 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     });
 
     try {
-      final manifest = await _ytExplode.videos.streamsClient.getManifest(widget.videoId);
-      final streamInfo = manifest.muxed.withHighestBitrate();
-      final videoUrl = streamInfo.url;
+      final manifestFuture =
+          _ytExplode.videos.streamsClient.getManifest(widget.videoId);
+      final videoFuture = _ytExplode.videos.get(VideoId(widget.videoId));
 
-      if (videoUrl.toString().isEmpty) {
-        throw Exception('No valid stream URL found');
-      }
-
-      _videoPlayerController = VideoPlayerController.networkUrl(videoUrl);
-      await _videoPlayerController?.initialize();
+      final manifest = await manifestFuture;
+      final video = await videoFuture;
 
       if (mounted) {
-        final video = await _ytExplode.videos.get(VideoId(widget.videoId));
         _videoTitle = video.title;
-
-        _manager.setPlayerData(
-          controller: _videoPlayerController!,
-          streamUrl: videoUrl.toString(),
-          title: _videoTitle,
-        );
-
-        _chewieController = ChewieController(
-          videoPlayerController: _videoPlayerController!,
-          autoPlay: true,
-          looping: false,
-          aspectRatio: 16 / 9,
-          allowFullScreen: true,
-          allowedScreenSleep: false,
-          autoInitialize: true,
-        );
-
-        setState(() {
-          _isLoading = false;
-        });
-
-        _fetchRelatedVideos();
       }
+
+      _muxedStreamInfos = manifest.muxed.sortByVideoQuality().reversed.toList();
+
+      if (_muxedStreamInfos.isEmpty) {
+        throw Exception('No muxed streams found');
+      }
+
+      _selectedStreamInfo = _muxedStreamInfos.first;
+      await _buildPlayerWithStream(_selectedStreamInfo!);
+
+      _fetchRelatedVideos(video);
     } catch (e) {
       log('Error initializing player: $e');
       if (mounted) {
@@ -108,9 +95,103 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     }
   }
 
-  Future<void> _fetchRelatedVideos() async {
+  Future<void> _buildPlayerWithStream(MuxedStreamInfo streamInfo,
+      {Duration startAt = Duration.zero}) async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+    });
+
     try {
-      final video = await _ytExplode.videos.get(VideoId(widget.videoId));
+      _disposeControllers();
+
+      _videoPlayerController = VideoPlayerController.networkUrl(streamInfo.url);
+      await _videoPlayerController!.initialize();
+      await _videoPlayerController!.seekTo(startAt);
+
+      if (mounted) {
+        _manager.setPlayerData(
+          controller: _videoPlayerController!,
+          streamUrl: streamInfo.url.toString(),
+          title: _videoTitle,
+        );
+
+        _chewieController = ChewieController(
+          videoPlayerController: _videoPlayerController!,
+          autoPlay: true,
+          looping: false,
+          aspectRatio: 16 / 9,
+          allowFullScreen: true,
+          allowedScreenSleep: false,
+          autoInitialize: true,
+        );
+
+        _selectedStreamInfo = streamInfo;
+
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      log('Error building player: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cambiar de calidad: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _changeQuality(MuxedStreamInfo newStreamInfo) async {
+    if (_selectedStreamInfo?.videoQuality == newStreamInfo.videoQuality) {
+      return;
+    }
+
+    final currentPosition = await _videoPlayerController?.position ?? Duration.zero;
+    await _buildPlayerWithStream(newStreamInfo, startAt: currentPosition);
+  }
+
+  void _showQualityOptions(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Seleccionar Calidad'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: _muxedStreamInfos.map((streamInfo) {
+                final isSelected =
+                    streamInfo.videoQuality == _selectedStreamInfo?.videoQuality;
+                return ListTile(
+                  title: Text(
+                    '${streamInfo.videoResolution.height}p',
+                    style: TextStyle(
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: isSelected
+                          ? Theme.of(context).primaryColor
+                          : null,
+                    ),
+                  ),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _changeQuality(streamInfo);
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _fetchRelatedVideos(Video video) async {
+    try {
       final relatedVideos = await _ytExplode.videos.getRelatedVideos(video);
       if (mounted) {
         setState(() {
@@ -175,7 +256,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       child: Draggable(
         feedback: Material(
           elevation: 8.0,
-          child: _buildMinimizedLayout(minimizedWidth, minimizedHeight, playerWidget),
+          child:
+              _buildMinimizedLayout(minimizedWidth, minimizedHeight, playerWidget),
         ),
         maxSimultaneousDrags: isMinimized ? 1 : 0,
         onDragEnd: (details) {
@@ -184,15 +266,20 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
           double dy = details.offset.dy;
 
           if (dx < 0) dx = 0;
-          if (dx > size.width - minimizedWidth) dx = size.width - minimizedWidth;
+          if (dx > size.width - minimizedWidth) {
+            dx = size.width - minimizedWidth;
+          }
           if (dy < 0) dy = 0;
-          if (dy > size.height - minimizedHeight) dy = size.height - minimizedHeight;
+          if (dy > size.height - minimizedHeight) {
+            dy = size.height - minimizedHeight;
+          }
 
           setState(() {
             _dragOffset = Offset(dx, dy);
           });
         },
-        child: _buildPlayerContent(isMinimized, minimizedWidth, minimizedHeight, playerWidget),
+        child: _buildPlayerContent(
+            isMinimized, minimizedWidth, minimizedHeight, playerWidget),
       ),
     );
   }
@@ -228,7 +315,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
               children: [
                 AspectRatio(
                   aspectRatio: 16 / 9,
-                  child: player,
+                  child: _isLoading
+                      ? const Center(child: CupertinoActivityIndicator())
+                      : player,
                 ),
                 Positioned(
                   top: 8,
@@ -244,20 +333,44 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
             ),
             Padding(
               padding: const EdgeInsets.all(16.0),
-              child: Text(
-                _videoTitle,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(
+                      _videoTitle,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  IconButton(
+                    icon: const Icon(Icons.settings),
+                    tooltip: 'Cambiar Calidad',
+                    onPressed: () {
+                      if (_muxedStreamInfos.isNotEmpty) {
+                        _showQualityOptions(context);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content:
+                                  Text('No hay otras calidades disponibles.')),
+                        );
+                      }
+                    },
+                  ),
+                ],
               ),
             ),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: Text(
-                'Related Videos',
+                'Videos Relacionados',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
@@ -316,7 +429,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
               onPressed: _manager.close,
-              child: const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
+              child:
+                  const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
             ),
           ),
           Positioned(
@@ -325,7 +439,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
               onPressed: _manager.maximize,
-              child: const Icon(Icons.open_in_full, color: Colors.white, size: 20),
+              child:
+                  const Icon(Icons.open_in_full, color: Colors.white, size: 20),
             ),
           ),
         ],
