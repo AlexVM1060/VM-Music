@@ -1,4 +1,8 @@
+import 'dart:async';
+
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
 // Gestor de estado para el reproductor de vídeo.
 // Utiliza ChangeNotifier para notificar a los widgets cuando hay cambios.
@@ -7,24 +11,89 @@ class VideoPlayerManager extends ChangeNotifier {
   bool _isMinimized = false;
   bool _isFullScreen = false;
 
-  // Getter para saber el ID del vídeo actual
+  // Nuevas propiedades para el audio en segundo plano
+  final AudioHandler _audioHandler;
+  VideoPlayerController? _videoPlayerController;
+  String? _videoStreamUrl;
+  String? _videoTitle;
+  bool _isInBackground = false; // Flag para saber si está en modo audio de fondo
+
+  VideoPlayerManager(this._audioHandler); // Inyectar AudioHandler
+
   String? get currentVideoId => _currentVideoId;
-
-  // Getter para saber si el reproductor está minimizado
   bool get isMinimized => _isMinimized;
-
-  // Getter para saber si el reproductor está en pantalla completa
   bool get isFullScreen => _isFullScreen;
+
+  // Función para registrar los datos del reproductor cuando está listo
+  void setPlayerData({
+    required VideoPlayerController controller,
+    required String streamUrl,
+    required String title,
+  }) {
+    _videoPlayerController = controller;
+    _videoStreamUrl = streamUrl;
+    _videoTitle = title;
+  }
 
   // Función para iniciar la reproducción de un nuevo vídeo
   void play(String videoId) {
+    if (_currentVideoId != null) {
+      close(); // Cierra el vídeo y audio actual si lo hay
+    }
     _currentVideoId = videoId;
-    _isMinimized = false; // Siempre empieza en grande
-    _isFullScreen = false; // Y no en pantalla completa
-    notifyListeners(); // Notifica a los widgets que el estado ha cambiado
+    _isMinimized = false;
+    _isFullScreen = false;
+    _isInBackground = false;
+    notifyListeners();
   }
 
-  // Función para minimizar el reproductor
+  // Cambia a modo de solo audio en segundo plano
+  Future<void> switchToBackgroundAudio() async {
+    if (_videoPlayerController == null ||
+        _videoStreamUrl == null ||
+        !_videoPlayerController!.value.isPlaying) {
+      return;
+    }
+
+    final position = await _videoPlayerController!.position;
+    if (position == null) return;
+
+    // Pausa el vídeo
+    await _videoPlayerController!.pause();
+
+    // Inicia el audio en segundo plano con audio_service
+    final mediaItem = MediaItem(
+      id: _videoStreamUrl!,
+      title: _videoTitle ?? 'Video sin título',
+      // Aquí podrías añadir más metadatos como el artista o la portada
+      // artUri: Uri.parse('...'),
+    );
+    // Pasamos el item a la cola y buscamos la posición correcta
+    await _audioHandler.addQueueItem(mediaItem);
+    await _audioHandler.seek(position);
+    await _audioHandler.play();
+
+    _isInBackground = true;
+  }
+
+  // Vuelve a la reproducción de vídeo en primer plano
+  Future<void> switchToForegroundVideo() async {
+    if (!_isInBackground || _videoPlayerController == null) return;
+
+    // Obtiene la posición actual del audio en segundo plano
+    final backgroundPosition = _audioHandler.playbackState.value.updatePosition;
+
+    // Detiene el audio en segundo plano
+    await _audioHandler.stop();
+
+    // Reanuda el vídeo desde la posición correcta
+    await _videoPlayerController!.seekTo(backgroundPosition);
+    await _videoPlayerController!.play();
+
+    _isInBackground = false;
+  }
+
+  // Función para minimizar el reproductor (modo PiP)
   void minimize() {
     if (!_isMinimized) {
       _isMinimized = true;
@@ -32,7 +101,7 @@ class VideoPlayerManager extends ChangeNotifier {
     }
   }
 
-  // Función para maximizar el reproductor
+  // Función para maximizar el reproductor desde el modo PiP
   void maximize() {
     if (_isMinimized) {
       _isMinimized = false;
@@ -42,17 +111,30 @@ class VideoPlayerManager extends ChangeNotifier {
 
   // Función para cerrar el reproductor
   void close() {
+    _videoPlayerController?.pause();
+    _audioHandler.stop();
+
     _currentVideoId = null;
     _isMinimized = false;
     _isFullScreen = false;
+    _isInBackground = false;
+    _videoPlayerController = null;
+    _videoStreamUrl = null;
+    _videoTitle = null;
+
     notifyListeners();
   }
 
-  // Función para actualizar el estado de la pantalla completa
   void setFullScreen(bool isFullScreen) {
     if (_isFullScreen != isFullScreen) {
       _isFullScreen = isFullScreen;
       notifyListeners();
     }
+  }
+
+  @override
+  void dispose() {
+    close();
+    super.dispose();
   }
 }

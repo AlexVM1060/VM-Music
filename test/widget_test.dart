@@ -7,7 +7,7 @@ void main() {
   // Inicializa el AudioHandler antes de que se ejecuten los tests,
   // ya que la app depende de que esta variable global esté inicializada.
   setUpAll(() async {
-    audioHandler = await initAudioService();
+    await initAudioService();
   });
 
   testWidgets('Muestra las pestañas Buscar y Descargas', (WidgetTester tester) async {

@@ -1,4 +1,3 @@
-import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:myapp/audio_handler.dart';
@@ -9,15 +8,15 @@ import 'package:myapp/video_player_manager.dart';
 import 'package:myapp/video_player_page.dart';
 import 'package:provider/provider.dart';
 
-late AudioHandler audioHandler;
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  audioHandler = await initAudioService();
+  // Inicializamos el servicio de audio y lo preparamos para inyectarlo
+  final audioHandler = await initAudioService();
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => VideoPlayerManager()),
+        // Inyectamos el audioHandler en el VideoPlayerManager
+        ChangeNotifierProvider(create: (_) => VideoPlayerManager(audioHandler)),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: const MyApp(),
