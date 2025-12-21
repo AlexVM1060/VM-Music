@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:developer';
 
-import 'package:chewie/chewie.dart';
+import 'package:better_player/better_player.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:myapp/video_player_manager.dart';
 import 'package:provider/provider.dart';
-import 'package:video_player/video_player.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 class VideoPlayerPage extends StatefulWidget {
@@ -18,36 +17,22 @@ class VideoPlayerPage extends StatefulWidget {
   State<VideoPlayerPage> createState() => _VideoPlayerPageState();
 }
 
-class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingObserver {
-  VideoPlayerController? _videoPlayerController;
-  ChewieController? _chewieController;
+class _VideoPlayerPageState extends State<VideoPlayerPage> {
   final _ytExplode = YoutubeExplode();
   List<Video> _relatedVideos = [];
   String _videoTitle = '';
   Offset _dragOffset = const Offset(200, 400);
   bool _isLoading = true;
+  String? _videoUrl;
+  Video? _currentVideo;
 
   late final VideoPlayerManager _manager;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _manager = Provider.of<VideoPlayerManager>(context, listen: false);
     _initializePlayer();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-
-    if (state == AppLifecycleState.paused) {
-      if (!_manager.isMinimized) {
-        _manager.switchToBackgroundAudio();
-      }
-    } else if (state == AppLifecycleState.resumed) {
-      _manager.switchToForegroundVideo();
-    }
   }
 
   Future<void> _initializePlayer() async {
@@ -65,33 +50,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
         throw Exception('No valid stream URL found');
       }
 
-      _videoPlayerController = VideoPlayerController.networkUrl(videoUrl);
-      await _videoPlayerController?.initialize();
+      final video = await _ytExplode.videos.get(VideoId(widget.videoId));
 
       if (mounted) {
-        final video = await _ytExplode.videos.get(VideoId(widget.videoId));
-        _videoTitle = video.title;
-
-        _manager.setPlayerData(
-          controller: _videoPlayerController!,
-          streamUrl: videoUrl.toString(),
-          title: _videoTitle,
-        );
-
-        _chewieController = ChewieController(
-          videoPlayerController: _videoPlayerController!,
-          autoPlay: true,
-          looping: false,
-          aspectRatio: 16 / 9,
-          allowFullScreen: true,
-          allowedScreenSleep: false,
-          autoInitialize: true,
-        );
-
         setState(() {
+          _videoUrl = videoUrl.toString();
+          _videoTitle = video.title;
+          _currentVideo = video; // Guardamos el objeto de vídeo actual
           _isLoading = false;
         });
-
         _fetchRelatedVideos();
       }
     } catch (e) {
@@ -109,9 +76,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
   }
 
   Future<void> _fetchRelatedVideos() async {
+    if (_currentVideo == null) return;
     try {
-      final video = await _ytExplode.videos.get(VideoId(widget.videoId));
-      final relatedVideos = await _ytExplode.videos.getRelatedVideos(video);
+      final relatedVideos = await _ytExplode.videos.getRelatedVideos(_currentVideo!);
       if (mounted) {
         setState(() {
           _relatedVideos = relatedVideos?.toList() ?? [];
@@ -126,32 +93,21 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
   void didUpdateWidget(covariant VideoPlayerPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.videoId != widget.videoId) {
-      _disposeControllers();
       _initializePlayer();
     }
   }
 
-  void _disposeControllers() {
-    _videoPlayerController?.dispose();
-    _chewieController?.dispose();
-  }
-
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _disposeControllers();
     _ytExplode.close();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isMinimized = _manager.isMinimized;
+    final isMinimized = context.select((VideoPlayerManager m) => m.isMinimized);
 
-    const double minimizedWidth = 250.0;
-    const double minimizedHeight = 140.6;
-
-    if (_isLoading && !isMinimized) {
+    if (_isLoading) {
       return const Scaffold(
         body: Center(
           child: CupertinoActivityIndicator(),
@@ -159,11 +115,20 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       );
     }
 
-    if (_chewieController == null) {
+    if (_videoUrl == null) {
       return const SizedBox.shrink();
     }
 
-    final playerWidget = Chewie(controller: _chewieController!);
+    final playerWidget = BetterPlayer.network(
+      _videoUrl!,
+      betterPlayerConfiguration: BetterPlayerConfiguration(
+        aspectRatio: 16 / 9,
+        autoPlay: true,
+        fullScreenByDefault: false,
+        allowedScreenSleep: false,
+        controlsConfiguration: BetterPlayerControlsConfiguration(),
+      ),
+    );
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
@@ -175,7 +140,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       child: Draggable(
         feedback: Material(
           elevation: 8.0,
-          child: _buildMinimizedLayout(minimizedWidth, minimizedHeight, playerWidget),
+          child: _buildMinimizedLayout(250.0, 140.6, playerWidget),
         ),
         maxSimultaneousDrags: isMinimized ? 1 : 0,
         onDragEnd: (details) {
@@ -184,15 +149,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
           double dy = details.offset.dy;
 
           if (dx < 0) dx = 0;
-          if (dx > size.width - minimizedWidth) dx = size.width - minimizedWidth;
+          if (dx > size.width - 250.0) dx = size.width - 250.0;
           if (dy < 0) dy = 0;
-          if (dy > size.height - minimizedHeight) dy = size.height - minimizedHeight;
+          if (dy > size.height - 140.6) dy = size.height - 140.6;
 
           setState(() {
             _dragOffset = Offset(dx, dy);
           });
         },
-        child: _buildPlayerContent(isMinimized, minimizedWidth, minimizedHeight, playerWidget),
+        child: _buildPlayerContent(isMinimized, 250.0, 140.6, playerWidget),
       ),
     );
   }

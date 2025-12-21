@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:myapp/audio_handler.dart';
 import 'package:myapp/downloads_page.dart';
 import 'package:myapp/router.dart'; // Importa la configuración del router
 import 'package:myapp/search_page.dart';
@@ -8,15 +7,12 @@ import 'package:myapp/video_player_manager.dart';
 import 'package:myapp/video_player_page.dart';
 import 'package:provider/provider.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // Inicializamos el servicio de audio y lo preparamos para inyectarlo
-  final audioHandler = await initAudioService();
   runApp(
     MultiProvider(
       providers: [
-        // Inyectamos el audioHandler en el VideoPlayerManager
-        ChangeNotifierProvider(create: (_) => VideoPlayerManager(audioHandler)),
+        ChangeNotifierProvider(create: (_) => VideoPlayerManager()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: const MyApp(),
@@ -61,9 +57,8 @@ class MyApp extends StatelessWidget {
 
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, child) {
-        // Cambia a MaterialApp.router y usa la configuración de go_router
         return MaterialApp.router(
-          routerConfig: router, // Asigna el router importado
+          routerConfig: router,
           title: 'VM Player',
           theme: lightTheme,
           darkTheme: darkTheme,
@@ -127,7 +122,6 @@ class _MainTabsState extends State<MainTabs> {
 
   @override
   Widget build(BuildContext context) {
-    final isFullScreen = context.watch<VideoPlayerManager>().isFullScreen;
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     return Scaffold(
@@ -142,16 +136,15 @@ class _MainTabsState extends State<MainTabs> {
         ],
       ),
       body: _pages.elementAt(_selectedIndex),
-      bottomNavigationBar: isFullScreen
-          ? null
-          : BottomNavigationBar(
-              items: const <BottomNavigationBarItem>[
-                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'),
-                BottomNavigationBarItem(icon: Icon(Icons.download), label: 'Descargas'),
-              ],
-              currentIndex: _selectedIndex,
-              onTap: _onItemTapped,
-            ),
+      // Se elimina la condición isFullScreen, la barra de navegación siempre será visible
+      bottomNavigationBar: BottomNavigationBar(
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'),
+          BottomNavigationBarItem(icon: Icon(Icons.download), label: 'Descargas'),
+        ],
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+      ),
     );
   }
 }
