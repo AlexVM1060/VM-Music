@@ -1,6 +1,3 @@
-
-import 'dart:io';
-
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -18,12 +15,10 @@ Future<AudioHandler> initAudioService() async {
 
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
-  final _playlist = ConcatenatingAudioSource(children: []);
 
   MyAudioHandler() {
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
     _listenForCurrentSongIndexChanges();
-     _player.setAudioSource(_playlist);
   }
 
   void _listenForCurrentSongIndexChanges() {
@@ -49,30 +44,30 @@ class MyAudioHandler extends BaseAudioHandler {
   @override
   Future<void> addQueueItem(MediaItem mediaItem) async {
     final audioSource = _createAudioSource(mediaItem);
-    await _playlist.clear();
-    await _playlist.add(audioSource);
-     this.mediaItem.add(mediaItem);
-   
+    await _player.setAudioSource(audioSource);
+    this.mediaItem.add(mediaItem);
   }
 
-    @override
+  @override
   Future<void> updateQueue(List<MediaItem> queue) async {
-    await _playlist.clear();
     final audioSources = queue.map(_createAudioSource).toList();
-    await _playlist.addAll(audioSources);
-    this.queue.add(queue);
+    if (audioSources.isNotEmpty) {
+      await _player.setAudioSource(ConcatenatingAudioSource(children: audioSources));
+      this.queue.add(queue);
+      if (queue.isNotEmpty) {
+        mediaItem.add(queue.first);
+      }
+    }
   }
-
 
   AudioSource _createAudioSource(MediaItem mediaItem) {
-  // Support for online and offline playback
-  if (mediaItem.extras?['isLocal'] == true) {
-    return AudioSource.file(mediaItem.id, tag: mediaItem);
-  } else {
-    return AudioSource.uri(Uri.parse(mediaItem.id), tag: mediaItem);
+    // Support for online and offline playback
+    if (mediaItem.extras?['isLocal'] == true) {
+      return AudioSource.file(mediaItem.id, tag: mediaItem);
+    } else {
+      return AudioSource.uri(Uri.parse(mediaItem.id), tag: mediaItem);
+    }
   }
-}
-
 
   PlaybackState _transformEvent(PlaybackEvent event) {
     return PlaybackState(
@@ -94,7 +89,6 @@ class MyAudioHandler extends BaseAudioHandler {
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
       queueIndex: event.currentIndex,
-      // Announce the update time to the system so it knows when the state was last updated.
       updateTime: DateTime.now(),
     );
   }

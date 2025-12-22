@@ -1,146 +1,135 @@
-import 'dart:async';
 import 'dart:io';
-import 'package:dio/dio.dart';
-import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
-import 'package:myapp/models/downloaded_video.dart';
-import 'package:myapp/models/video_history.dart';
+import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
-
-enum DownloadStatus { notDownloaded, downloading, downloaded, error }
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
+import 'package:permission_handler/permission_handler.dart';
+import 'package:myapp/models/downloaded_video.dart';
+import 'package:myapp/models/video.dart';
+import 'package:hive/hive.dart';
 
 class DownloadService with ChangeNotifier {
-  static const String _downloadsBoxName = 'downloads';
-  static const String _autoDownloadBoxName = 'auto_download_playlists';
-  final YoutubeExplode _yt = YoutubeExplode();
-  final Dio _dio = Dio();
-
-  final Map<String, double> _downloadProgress = {};
-  final Map<String, DownloadStatus> _downloadStatus = {};
-  Set<String> _autoDownloadPlaylists = {};
-
-  Future<Box<DownloadedVideo>> get _downloadsBox async => await Hive.openBox<DownloadedVideo>(_downloadsBoxName);
-  Future<Box<String>> get _autoDownloadBox async => await Hive.openBox<String>(_autoDownloadBoxName);
+  final yt.YoutubeExplode _youtubeExplode = yt.YoutubeExplode();
+  final Box<DownloadedVideo> _downloadedVideoBox = Hive.box<DownloadedVideo>('downloaded_videos');
+  final Box _settingsBox = Hive.box('settings');
 
   DownloadService() {
-    _loadAutoDownloadPlaylists();
-    loadDownloadedVideos();
+    _initialize();
   }
 
-  Future<void> _loadAutoDownloadPlaylists() async {
-    final box = await _autoDownloadBox;
-    _autoDownloadPlaylists = box.values.toSet();
-    notifyListeners();
+  void _initialize() {
+    _downloadedVideoBox.watch().listen((event) {
+      notifyListeners();
+    });
+    _settingsBox.watch().listen((event) {
+      notifyListeners();
+    });
   }
 
-  Future<void> setPlaylistAutoDownload(String playlistName, bool enabled) async {
-    final box = await _autoDownloadBox;
-    if (enabled) {
-      await box.put(playlistName, playlistName);
-      _autoDownloadPlaylists.add(playlistName);
-    } else {
-      await box.delete(playlistName);
-      _autoDownloadPlaylists.remove(playlistName);
-    }
-    notifyListeners();
-  }
-
-  bool isPlaylistAutoDownload(String playlistName) {
-    return _autoDownloadPlaylists.contains(playlistName);
-  }
-
-  Future<void> downloadPlaylistVideos(List<VideoHistory> videos) async {
-    for (final video in videos) {
-      final isDownloaded = (await _downloadsBox).containsKey(video.videoId);
-      if (!isDownloaded) {
-        downloadVideo(video.videoId, video.title, video.thumbnailUrl, video.channelTitle);
+  Future<void> _requestPermissions() async {
+    if (Platform.isAndroid) {
+      var status = await Permission.storage.status;
+      if (!status.isGranted) {
+        await Permission.storage.request();
       }
+    }
+  }
+
+  Future<void> downloadVideo(Video video) async {
+    await _requestPermissions();
+
+    if (_downloadedVideoBox.containsKey(video.videoId)) {
+      return;
+    }
+
+    try {
+      final streamManifest = await _youtubeExplode.videos.streamsClient.getManifest(video.videoId);
+      final streamInfo = streamManifest.muxed.last;
+
+      final documentsDir = await getApplicationDocumentsDirectory();
+      final filePath = path.join(documentsDir.path, '${video.videoId}.mp4');
+      final file = File(filePath);
+
+      final stream = _youtubeExplode.videos.streamsClient.get(streamInfo);
+      final fileStream = file.openWrite();
+
+      await stream.pipe(fileStream);
+      await fileStream.flush();
+      await fileStream.close();
+
+      // Descargar miniatura
+      final thumbnailPath = path.join(documentsDir.path, '${video.videoId}.jpg');
+      final thumbnailResponse = await http.get(Uri.parse(video.thumbnailUrl));
+      final thumbnailFile = File(thumbnailPath);
+      await thumbnailFile.writeAsBytes(thumbnailResponse.bodyBytes);
+
+      final downloadedVideo = DownloadedVideo(
+        videoId: video.videoId,
+        title: video.title,
+        thumbnailUrl: video.thumbnailUrl,
+        channelTitle: video.channelTitle,
+        filePath: filePath,
+        localThumbnailPath: thumbnailPath,
+      );
+
+      await _downloadedVideoBox.put(video.videoId, downloadedVideo);
+      notifyListeners();
+    } catch (e) {
+      // Manejar el error
+    }
+  }
+
+  Future<void> downloadPlaylistVideos(List<Video> videos) async {
+    for (final video in videos) {
+      await downloadVideo(video);
     }
   }
 
   Future<List<DownloadedVideo>> getDownloadedVideos() async {
-    final box = await _downloadsBox;
-    return box.values.toList();
-  }
-
-  Future<void> downloadVideo(String videoId, String title, String thumbnailUrl, String channelTitle) async {
-    final isAlreadyDownloaded = (await _downloadsBox).containsKey(videoId);
-    if (_downloadStatus[videoId] == DownloadStatus.downloading || isAlreadyDownloaded) return;
-
-    _downloadStatus[videoId] = DownloadStatus.downloading;
-    _downloadProgress[videoId] = 0.0;
-    notifyListeners();
-
-    try {
-      final streamManifest = await _yt.videos.streamsClient.getManifest(videoId);
-      final streamInfo = streamManifest.muxed.withHighestBitrate();
-      final appDir = await getApplicationDocumentsDirectory();
-      final filePath = '${appDir.path}/$videoId.mp4';
-
-      await _dio.download(
-        streamInfo.url.toString(),
-        filePath,
-        onReceiveProgress: (received, total) {
-          if (total != -1) {
-            _downloadProgress[videoId] = received / total;
-            notifyListeners();
-          }
-        },
-      );
-
-      final downloadedVideo = DownloadedVideo(
-        videoId: videoId,
-        title: title,
-        thumbnailUrl: thumbnailUrl,
-        channelTitle: channelTitle,
-        filePath: filePath,
-      );
-
-      final box = await _downloadsBox;
-      await box.put(videoId, downloadedVideo);
-
-      _downloadStatus[videoId] = DownloadStatus.downloaded;
-      _downloadProgress.remove(videoId);
-      notifyListeners();
-    } catch (e) {
-      _downloadStatus[videoId] = DownloadStatus.error;
-      _downloadProgress.remove(videoId);
-      notifyListeners();
-    }
+    return _downloadedVideoBox.values.toList();
   }
 
   Future<void> deleteVideo(String videoId) async {
-    final box = await _downloadsBox;
-    final video = box.get(videoId);
-    if (video != null) {
-      final file = File(video.filePath);
-      if (await file.exists()) {
-        await file.delete();
+    try {
+      final video = _downloadedVideoBox.get(videoId);
+      if (video != null) {
+        final videoFile = File(video.filePath);
+        if (await videoFile.exists()) {
+          await videoFile.delete();
+        }
+
+        final thumbnailFile = File(video.localThumbnailPath);
+        if (await thumbnailFile.exists()) {
+          await thumbnailFile.delete();
+        }
+
+        await _downloadedVideoBox.delete(videoId);
+        notifyListeners();
       }
-      await box.delete(videoId);
-      _downloadStatus.remove(videoId);
-      notifyListeners();
+    } catch (e) {
+      // Manejar el error
     }
   }
 
-  DownloadStatus getDownloadStatus(String videoId) {
-    if (_downloadStatus.containsKey(videoId)) {
-      return _downloadStatus[videoId]!;
-    }
-    return DownloadStatus.notDownloaded;
+  bool isPlaylistAutoDownload(String playlistName) {
+    return _settingsBox.get('auto_download_$playlistName', defaultValue: false);
   }
 
-  double getDownloadProgress(String videoId) {
-    return _downloadProgress[videoId] ?? 0.0;
+  void setPlaylistAutoDownload(String playlistName, bool value) {
+    _settingsBox.put('auto_download_$playlistName', value);
   }
 
-  Future<void> loadDownloadedVideos() async {
-    final box = await _downloadsBox;
-    final videos = box.values;
-    for (var video in videos) {
-      _downloadStatus[video.videoId] = DownloadStatus.downloaded;
-    }
+  void addDownloadedVideoForTest(DownloadedVideo video) {
+    _downloadedVideoBox.put(video.videoId, video);
     notifyListeners();
+  }
+
+  bool isVideoDownloaded(String videoId) {
+    return _downloadedVideoBox.containsKey(videoId);
+  }
+
+  DownloadedVideo? getDownloadedVideo(String videoId) {
+    return _downloadedVideoBox.get(videoId);
   }
 }

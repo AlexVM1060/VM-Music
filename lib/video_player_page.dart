@@ -1,13 +1,9 @@
 import 'dart:async';
 import 'dart:developer';
 
-import 'package:audio_service/audio_service.dart';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:myapp/models/video_history.dart';
-import 'package:myapp/services/download_service.dart';
-import 'package:myapp/services/playlist_service.dart';
 import 'package:myapp/video_player_manager.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
@@ -113,7 +109,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           title: _videoTitle,
           thumbnailUrl: _video!.thumbnails.mediumResUrl,
           channelTitle: _video!.author,
-          duration: _video!.duration, // Se pasa la duración del video
         );
 
         _chewieController = ChewieController(
@@ -313,11 +308,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   }
 
   Widget _buildMaximizedLayout(Widget player) {
-    final playlistService = Provider.of<PlaylistService>(
-      context,
-      listen: false,
-    );
-
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -358,28 +348,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  DownloadButton(videoId: widget.videoId, video: _video),
-                  IconButton(
-                    icon: const Icon(Icons.favorite_border),
-                    tooltip: 'Añadir a favoritos',
-                    onPressed: () {
-                      if (_video == null) return;
-                      final videoHistory = VideoHistory(
-                        videoId: _video!.id.value,
-                        title: _video!.title,
-                        thumbnailUrl: _video!.thumbnails.mediumResUrl,
-                        channelTitle: _video!.author,
-                        watchedAt: DateTime.now(),
-                      );
-                      playlistService.addVideoToPlaylist(
-                        'Videos favoritos',
-                        videoHistory,
-                      );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Añadido a favoritos')),
-                      );
-                    },
-                  ),
                   IconButton(
                     icon: const Icon(Icons.settings),
                     tooltip: 'Cambiar Calidad',
@@ -400,27 +368,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 ],
               ),
             ),
-             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: StreamBuilder<PlaybackState>(
-                stream: AudioService.playbackStateStream,
-                builder: (context, snapshot) {
-                  final playbackState = snapshot.data;
-                  final position = playbackState?.updatePosition ?? Duration.zero;
-                  final duration = _video?.duration ?? Duration.zero;
-
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(_formatDuration(position)),
-                      Text(_formatDuration(duration)),
-                    ],
-                  );
-                },
-              ),
-            ),
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding: EdgeInsets.symmetric(horizontal: 16.0),
               child: Text(
                 'Videos Relacionados',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -469,13 +418,6 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     );
   }
 
-    String _formatDuration(Duration duration) {
-    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$minutes:$seconds';
-  }
-
-
   Widget _buildMinimizedLayout(double width, double height, Widget player) {
     return SizedBox(
       width: width,
@@ -513,48 +455,5 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         ],
       ),
     );
-  }
-}
-
-class DownloadButton extends StatelessWidget {
-  final String videoId;
-  final Video? video;
-
-  const DownloadButton({super.key, required this.videoId, this.video});
-
-  @override
-  Widget build(BuildContext context) {
-    final downloadService = context.watch<DownloadService>();
-    final status = downloadService.getDownloadStatus(videoId);
-
-    switch (status) {
-      case DownloadStatus.downloading:
-        final progress = downloadService.getDownloadProgress(videoId);
-        return Stack(
-          alignment: Alignment.center,
-          children: [
-            CircularProgressIndicator(value: progress),
-            const Icon(Icons.downloading, size: 20),
-          ],
-        );
-      case DownloadStatus.downloaded:
-        return const Icon(Icons.check_circle, color: Colors.green);
-      case DownloadStatus.error:
-        return const Icon(Icons.error, color: Colors.red);
-      case DownloadStatus.notDownloaded:
-        return IconButton(
-          icon: const Icon(Icons.download),
-          tooltip: 'Descargar video',
-          onPressed: () {
-            if (video == null) return;
-            downloadService.downloadVideo(
-              videoId,
-              video!.title,
-              video!.thumbnails.mediumResUrl,
-              video!.author,
-            );
-          },
-        );
-    }
   }
 }
