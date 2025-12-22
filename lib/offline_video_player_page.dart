@@ -20,8 +20,7 @@ class OfflineVideoPlayerPage extends StatefulWidget {
   State<OfflineVideoPlayerPage> createState() => _OfflineVideoPlayerPageState();
 }
 
-class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
-    with WidgetsBindingObserver {
+class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage> {
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
   bool _isLoading = true;
@@ -32,22 +31,9 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _manager = Provider.of<VideoPlayerManager>(context, listen: false);
+    _manager.init();
     _initializePlayer();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-
-    if (state == AppLifecycleState.paused) {
-      // Simplificado: El manager se encarga de la lógica.
-      _manager.switchToBackgroundAudio();
-    } else if (state == AppLifecycleState.resumed) {
-      // Simplificado: El manager se encarga de la lógica.
-      _manager.switchToForegroundVideo();
-    }
   }
 
   Future<void> _initializePlayer() async {
@@ -62,7 +48,7 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
         throw Exception('El archivo de video no existe');
       }
 
-      _disposeControllers();
+      await _disposeControllers();
 
       _videoPlayerController = VideoPlayerController.file(file);
       await _videoPlayerController!.initialize();
@@ -104,8 +90,8 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
     }
   }
 
-  void _disposeControllers() {
-    _videoPlayerController?.dispose();
+  Future<void> _disposeControllers() async {
+    await _videoPlayerController?.dispose();
     _chewieController?.dispose();
   }
 
@@ -120,7 +106,6 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _disposeControllers();
     super.dispose();
   }
@@ -132,23 +117,17 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
     const double minimizedWidth = 250.0;
     const double minimizedHeight = 140.6;
 
+    final playerWidget = _chewieController != null && _chewieController!.videoPlayerController.value.isInitialized
+        ? Chewie(controller: _chewieController!)
+        : const Center(child: CupertinoActivityIndicator());
+
     if (_isLoading && !isMinimized) {
-      return const Scaffold(
+      return Scaffold(
         body: Center(
-          child: CupertinoActivityIndicator(),
+          child: playerWidget,
         ),
       );
     }
-
-    if (_chewieController == null || _chewieController!.videoPlayerController.value.isInitialized == false) {
-      return const Scaffold(
-        body: Center(
-          child: CupertinoActivityIndicator(),
-        ),
-      );
-    }
-
-    final playerWidget = Chewie(controller: _chewieController!);
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
@@ -214,9 +193,7 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
               children: [
                 AspectRatio(
                   aspectRatio: 16 / 9,
-                  child: _isLoading
-                      ? const Center(child: CupertinoActivityIndicator())
-                      : player,
+                  child: player,
                 ),
                 Positioned(
                   top: 8,
@@ -244,8 +221,15 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
                     ),
                   ),
                   const SizedBox(width: 16),
-                   
-                  
+                   IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red),
+                    tooltip: 'Eliminar descarga',
+                    onPressed: () {
+                      downloadService.deleteVideo(widget.video.videoId); // CORREGIDO
+                       _manager.close(); // Cierra el reproductor al borrar
+                      Navigator.of(context).pop();
+                    },
+                  ),
                 ],
               ),
             ),
@@ -269,7 +253,7 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
             right: 0,
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
-              onPressed: _manager.close,
+              onPressed: () => _manager.close(),
               child: const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
             ),
           ),

@@ -61,7 +61,7 @@ class MyApp extends StatelessWidget {
     final lightTheme = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: primarySeedColor,
+        seedColor: const Color.fromARGB(255, 207, 21, 21),
         brightness: Brightness.light,
       ),
       textTheme: GoogleFonts.robotoTextTheme(),
@@ -70,7 +70,7 @@ class MyApp extends StatelessWidget {
     final darkTheme = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: primarySeedColor,
+        seedColor: const Color.fromARGB(255, 207, 21, 21),
         brightness: Brightness.dark,
       ),
       textTheme: GoogleFonts.robotoTextTheme(ThemeData(brightness: Brightness.dark).textTheme),

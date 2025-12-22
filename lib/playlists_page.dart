@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:myapp/models/playlist.dart';
-import 'package:myapp/playlist_details_page.dart';
+import 'package:myapp/playlist_detail_page.dart';
 import 'package:myapp/services/playlist_service.dart';
 import 'package:provider/provider.dart';
 
@@ -22,7 +22,8 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
 
   void _loadPlaylists() {
     setState(() {
-      _playlistsFuture = Provider.of<PlaylistService>(context, listen: false).getPlaylists();
+      _playlistsFuture =
+          Provider.of<PlaylistService>(context, listen: false).getPlaylists();
     });
   }
 
@@ -47,6 +48,10 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                 if (controller.text.isNotEmpty) {
                   await Provider.of<PlaylistService>(context, listen: false)
                       .createPlaylist(controller.text);
+                  
+                  // Comprobación de seguridad
+                  if (!context.mounted) return;
+                  
                   Navigator.of(context).pop();
                   _loadPlaylists();
                 }
@@ -86,7 +91,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (context) => PlaylistDetailsPage(playlist: playlist),
+                      builder: (context) => PlaylistDetailPage(playlist: playlist),
                     ),
                   ).then((_) => _loadPlaylists());
                 },

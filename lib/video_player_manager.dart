@@ -1,3 +1,4 @@
+
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
@@ -6,27 +7,67 @@ import 'package:myapp/models/video_history.dart';
 import 'package:myapp/services/history_service.dart';
 import 'package:video_player/video_player.dart';
 
-class VideoPlayerManager extends ChangeNotifier {
+// Centraliza el manejo del estado del reproductor y el ciclo de vida de la app.
+class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
   final HistoryService _historyService = HistoryService();
+  final AudioHandler _audioHandler;
+
   String? _currentVideoId;
   bool _isMinimized = false;
   bool _isFullScreen = false;
 
-  final AudioHandler _audioHandler;
   VideoPlayerController? _videoPlayerController;
-  String? _videoStreamUrl; 
+  String? _videoStreamUrl;
   String? _videoTitle;
   String? _videoThumbnailUrl;
   String? _videoChannelTitle;
+  bool _isLocal = false;
   bool _isInBackground = false;
-  bool _isLocal = false; 
 
+  // Constructor
   VideoPlayerManager(this._audioHandler);
 
+  // Getters
   String? get currentVideoId => _currentVideoId;
   bool get isMinimized => _isMinimized;
   bool get isFullScreen => _isFullScreen;
   bool get isInBackground => _isInBackground;
+
+  // Inicializador para el observador del ciclo de vida
+  void init() {
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _videoPlayerController?.dispose();
+    _audioHandler.stop();
+    super.dispose();
+  }
+
+  // MÉTODO DE CICLO DE VIDA CENTRALIZADO Y CORREGIDO
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+      case AppLifecycleState.hidden: // Caso añadido para ser exhaustivo
+        // Si hay un video cargado (reproduciendo o pausado), pasa a modo audio.
+        if (_videoPlayerController != null && !_isInBackground) {
+          switchToBackgroundAudio();
+        }
+        break;
+      case AppLifecycleState.resumed:
+        // Si estábamos en modo audio, vuelve al video.
+        if (_isInBackground) {
+          switchToForegroundVideo();
+        }
+        break;
+    }
+  }
 
   void setPlayerData({
     required VideoPlayerController controller,
@@ -46,7 +87,7 @@ class VideoPlayerManager extends ChangeNotifier {
 
   Future<void> play(String videoId, {bool isLocalVideo = false}) async {
     if (_currentVideoId != null) {
-      close();
+      await close(); // Cierra completamente el video anterior
     }
     _currentVideoId = videoId;
     _isMinimized = false;
@@ -69,13 +110,12 @@ class VideoPlayerManager extends ChangeNotifier {
   }
 
   Future<void> switchToBackgroundAudio() async {
-    if (_videoPlayerController == null ||
-        _videoStreamUrl == null ||
-        !_videoPlayerController!.value.isPlaying) {
+    if (_videoPlayerController == null || _videoStreamUrl == null || !_videoPlayerController!.value.isInitialized) {
       return;
     }
     if (_isInBackground) return;
 
+    _isInBackground = true;
     final position = _videoPlayerController!.value.position;
     await _videoPlayerController!.pause();
 
@@ -90,14 +130,13 @@ class VideoPlayerManager extends ChangeNotifier {
     await _audioHandler.addQueueItem(mediaItem);
     await _audioHandler.seek(position);
     await _audioHandler.play();
-
-    _isInBackground = true;
   }
 
   Future<void> switchToForegroundVideo() async {
     if (!_isInBackground || _videoPlayerController == null) return;
 
     final backgroundPosition = _audioHandler.playbackState.value.updatePosition;
+    
     await _audioHandler.stop();
 
     if (_videoPlayerController!.value.isInitialized) {
@@ -106,6 +145,7 @@ class VideoPlayerManager extends ChangeNotifier {
     }
 
     _isInBackground = false;
+    notifyListeners();
   }
 
   void minimize() {
@@ -122,9 +162,9 @@ class VideoPlayerManager extends ChangeNotifier {
     }
   }
 
-  void close() {
-    _videoPlayerController?.dispose();
-    _audioHandler.stop();
+  Future<void> close() async {
+    await _videoPlayerController?.dispose();
+    await _audioHandler.stop();
 
     _currentVideoId = null;
     _isMinimized = false;
@@ -145,12 +185,5 @@ class VideoPlayerManager extends ChangeNotifier {
       _isFullScreen = isFullScreen;
       notifyListeners();
     }
-  }
-
-  @override
-  void dispose() {
-    _audioHandler.stop();
-    _videoPlayerController?.dispose();
-    super.dispose();
   }
 }

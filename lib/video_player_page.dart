@@ -21,7 +21,7 @@ class VideoPlayerPage extends StatefulWidget {
   State<VideoPlayerPage> createState() => _VideoPlayerPageState();
 }
 
-class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingObserver {
+class _VideoPlayerPageState extends State<VideoPlayerPage> {
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
   final _ytExplode = YoutubeExplode();
@@ -39,24 +39,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _manager = Provider.of<VideoPlayerManager>(context, listen: false);
+    _manager.close();
+    _manager.init();
     _initializePlayer();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-
-    if (state == AppLifecycleState.paused) {
-      // Simplificado: Siempre intenta cambiar a audio en segundo plano al pausar la app.
-      // El manager se encargará de verificar si es necesario.
-      _manager.switchToBackgroundAudio();
-    } else if (state == AppLifecycleState.resumed) {
-      // Simplificado: Siempre intenta volver al vídeo en primer plano al reanudar.
-      // El manager se encargará de verificar si estaba en segundo plano.
-      _manager.switchToForegroundVideo();
-    }
   }
 
   Future<void> _initializePlayer() async {
@@ -66,8 +52,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     });
 
     try {
-      final manifestFuture =
-          _ytExplode.videos.streamsClient.getManifest(widget.videoId);
+      _manager.play(widget.videoId);
+      final manifestFuture = _ytExplode.videos.streamsClient.getManifest(
+        widget.videoId,
+      );
       final videoFuture = _ytExplode.videos.get(VideoId(widget.videoId));
 
       final manifest = await manifestFuture;
@@ -101,15 +89,17 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     }
   }
 
-  Future<void> _buildPlayerWithStream(MuxedStreamInfo streamInfo,
-      {Duration startAt = Duration.zero}) async {
+  Future<void> _buildPlayerWithStream(
+    MuxedStreamInfo streamInfo, {
+    Duration startAt = Duration.zero,
+  }) async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
     });
 
     try {
-      _disposeControllers();
+      await _disposeControllers();
 
       _videoPlayerController = VideoPlayerController.networkUrl(streamInfo.url);
       await _videoPlayerController!.initialize();
@@ -158,7 +148,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       return;
     }
 
-    final currentPosition = await _videoPlayerController?.position ?? Duration.zero;
+    final currentPosition =
+        _videoPlayerController?.value.position ?? Duration.zero;
     await _buildPlayerWithStream(newStreamInfo, startAt: currentPosition);
   }
 
@@ -173,16 +164,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
               mainAxisSize: MainAxisSize.min,
               children: _muxedStreamInfos.map((streamInfo) {
                 final isSelected =
-                    streamInfo.videoQuality == _selectedStreamInfo?.videoQuality;
+                    streamInfo.videoQuality ==
+                    _selectedStreamInfo?.videoQuality;
                 return ListTile(
                   title: Text(
                     '${streamInfo.videoResolution.height}p',
                     style: TextStyle(
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.normal,
-                      color: isSelected
-                          ? Theme.of(context).primaryColor
-                          : null,
+                      fontWeight: isSelected
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      color: isSelected ? Theme.of(context).primaryColor : null,
                     ),
                   ),
                   onTap: () {
@@ -220,15 +211,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     }
   }
 
-  void _disposeControllers() {
-    _videoPlayerController?.dispose();
+  Future<void> _disposeControllers() async {
+    await _videoPlayerController?.dispose();
     _chewieController?.dispose();
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    // No llames a _manager.close() aquí, para permitir que el audio continúe si es necesario.
     _disposeControllers();
     _ytExplode.close();
     super.dispose();
@@ -241,23 +230,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     const double minimizedWidth = 250.0;
     const double minimizedHeight = 140.6;
 
+    final playerWidget =
+        _chewieController != null &&
+            _chewieController!.videoPlayerController.value.isInitialized
+        ? Chewie(controller: _chewieController!)
+        : const Center(child: CupertinoActivityIndicator());
+
     if (_isLoading && !isMinimized) {
-      return const Scaffold(
-        body: Center(
-          child: CupertinoActivityIndicator(),
-        ),
-      );
+      return Scaffold(body: Center(child: playerWidget));
     }
-
-    if (_chewieController == null || _chewieController!.videoPlayerController.value.isInitialized == false) {
-       return const Scaffold(
-        body: Center(
-          child: CupertinoActivityIndicator(),
-        ),
-      );
-    }
-
-    final playerWidget = Chewie(controller: _chewieController!);
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
@@ -269,8 +250,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       child: Draggable(
         feedback: Material(
           elevation: 8.0,
-          child:
-              _buildMinimizedLayout(minimizedWidth, minimizedHeight, playerWidget),
+          child: _buildMinimizedLayout(
+            minimizedWidth,
+            minimizedHeight,
+            playerWidget,
+          ),
         ),
         maxSimultaneousDrags: isMinimized ? 1 : 0,
         onDragEnd: (details) {
@@ -292,13 +276,21 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
           });
         },
         child: _buildPlayerContent(
-            isMinimized, minimizedWidth, minimizedHeight, playerWidget),
+          isMinimized,
+          minimizedWidth,
+          minimizedHeight,
+          playerWidget,
+        ),
       ),
     );
   }
 
   Widget _buildPlayerContent(
-      bool isMinimized, double minWidth, double minHeight, Widget player) {
+    bool isMinimized,
+    double minWidth,
+    double minHeight,
+    Widget player,
+  ) {
     final screenSize = MediaQuery.of(context).size;
 
     return GestureDetector(
@@ -319,7 +311,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
   }
 
   Widget _buildMaximizedLayout(Widget player) {
-    final playlistService = Provider.of<PlaylistService>(context, listen: false);
+    final playlistService = Provider.of<PlaylistService>(
+      context,
+      listen: false,
+    );
 
     return Scaffold(
       body: SafeArea(
@@ -328,20 +323,18 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
           children: [
             Stack(
               children: [
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: _isLoading
-                      ? const Center(child: CupertinoActivityIndicator())
-                      : player,
-                ),
+                AspectRatio(aspectRatio: 16 / 9, child: player),
                 Positioned(
                   top: 8,
                   left: 8,
                   child: CupertinoButton(
                     padding: EdgeInsets.zero,
                     onPressed: _manager.minimize,
-                    child: const Icon(CupertinoIcons.chevron_down,
-                        color: Colors.white, size: 30),
+                    child: const Icon(
+                      CupertinoIcons.chevron_down,
+                      color: Colors.white,
+                      size: 30,
+                    ),
                   ),
                 ),
               ],
@@ -355,17 +348,16 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
                   Expanded(
                     child: Text(
                       _videoTitle,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 16),
                   DownloadButton(videoId: widget.videoId, video: _video),
-                   IconButton(
+                  IconButton(
                     icon: const Icon(Icons.favorite_border),
                     tooltip: 'Añadir a favoritos',
                     onPressed: () {
@@ -377,7 +369,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
                         channelTitle: _video!.author,
                         watchedAt: DateTime.now(),
                       );
-                      playlistService.addVideoToPlaylist('Videos favoritos', videoHistory);
+                      playlistService.addVideoToPlaylist(
+                        'Videos favoritos',
+                        videoHistory,
+                      );
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Añadido a favoritos')),
                       );
@@ -392,8 +387,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                              content:
-                                  Text('No hay otras calidades disponibles.')),
+                            content: Text(
+                              'No hay otras calidades disponibles.',
+                            ),
+                          ),
                         );
                       }
                     },
@@ -419,7 +416,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
                     },
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16.0, vertical: 8.0),
+                        horizontal: 16.0,
+                        vertical: 8.0,
+                      ),
                       child: Row(
                         children: [
                           Image.network(
@@ -462,9 +461,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
             right: 0,
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
-              onPressed: _manager.close, // Ahora close detiene todo limpiamente
-              child:
-                  const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
+              onPressed: () => _manager.close(),
+              child: const Icon(
+                CupertinoIcons.xmark,
+                color: Colors.white,
+                size: 20,
+              ),
             ),
           ),
           Positioned(
@@ -473,8 +475,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
               onPressed: _manager.maximize,
-              child:
-                  const Icon(Icons.open_in_full, color: Colors.white, size: 20),
+              child: const Icon(
+                Icons.open_in_full,
+                color: Colors.white,
+                size: 20,
+              ),
             ),
           ),
         ],
@@ -509,7 +514,6 @@ class DownloadButton extends StatelessWidget {
       case DownloadStatus.error:
         return const Icon(Icons.error, color: Colors.red);
       case DownloadStatus.notDownloaded:
-      default:
         return IconButton(
           icon: const Icon(Icons.download),
           tooltip: 'Descargar video',

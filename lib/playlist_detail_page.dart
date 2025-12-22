@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:myapp/models/playlist.dart';
 import 'package:myapp/services/playlist_service.dart';
-import 'package:myapp/video_player_manager.dart'; 
+import 'package:myapp/video_player_manager.dart';
 import 'package:provider/provider.dart';
 
 class PlaylistDetailPage extends StatefulWidget {
@@ -25,7 +25,6 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     final playlistService = Provider.of<PlaylistService>(context, listen: false);
@@ -47,17 +46,24 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                   trailing: IconButton(
                     icon: const Icon(Icons.delete, color: Colors.red),
                     onPressed: () async {
-                      await playlistService.removeVideoFromPlaylist(_currentPlaylist.name, video.videoId);
+                      await playlistService.removeVideoFromPlaylist(
+                          _currentPlaylist.name, video.videoId);
+
+                      // Comprobación de seguridad
+                      if (!context.mounted) return;
+
                       setState(() {
                         _currentPlaylist.videos.removeAt(index);
                       });
-                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Video eliminado de la playlist')),
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Video eliminado de la playlist')),
                       );
                     },
                   ),
                   onTap: () {
-                    Provider.of<VideoPlayerManager>(context, listen: false).play(video.videoId);
+                    Provider.of<VideoPlayerManager>(context, listen: false)
+                        .play(video.videoId);
                   },
                 );
               },
