@@ -2,11 +2,15 @@ import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
+import 'package:myapp/models/video_history.dart';
+import 'package:myapp/services/history_service.dart';
 import 'package:video_player/video_player.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 // Gestor de estado para el reproductor de vídeo.
 // Utiliza ChangeNotifier para notificar a los widgets cuando hay cambios.
 class VideoPlayerManager extends ChangeNotifier {
+  final HistoryService _historyService = HistoryService();
   String? _currentVideoId;
   bool _isMinimized = false;
   bool _isFullScreen = false;
@@ -16,6 +20,8 @@ class VideoPlayerManager extends ChangeNotifier {
   VideoPlayerController? _videoPlayerController;
   String? _videoStreamUrl;
   String? _videoTitle;
+  String? _videoThumbnailUrl;
+  String? _videoChannelTitle;
   bool _isInBackground = false; // Flag para saber si está en modo audio de fondo
 
   VideoPlayerManager(this._audioHandler); // Inyectar AudioHandler
@@ -29,14 +35,18 @@ class VideoPlayerManager extends ChangeNotifier {
     required VideoPlayerController controller,
     required String streamUrl,
     required String title,
+    required String thumbnailUrl,
+    required String channelTitle,
   }) {
     _videoPlayerController = controller;
     _videoStreamUrl = streamUrl;
     _videoTitle = title;
+    _videoThumbnailUrl = thumbnailUrl;
+    _videoChannelTitle = channelTitle;
   }
 
   // Función para iniciar la reproducción de un nuevo vídeo
-  void play(String videoId) {
+  Future<void> play(String videoId) async {
     if (_currentVideoId != null) {
       close(); // Cierra el vídeo y audio actual si lo hay
     }
@@ -44,6 +54,21 @@ class VideoPlayerManager extends ChangeNotifier {
     _isMinimized = false;
     _isFullScreen = false;
     _isInBackground = false;
+
+    // Save to history
+    final yt = YoutubeExplode();
+    final video = await yt.videos.get(videoId);
+    _historyService.addVideoToHistory(
+      VideoHistory(
+        videoId: video.id.value,
+        title: video.title,
+        thumbnailUrl: video.thumbnails.mediumResUrl,
+        channelTitle: video.author,
+        watchedAt: DateTime.now(),
+      ),
+    );
+    yt.close();
+
     notifyListeners();
   }
 
@@ -121,6 +146,8 @@ class VideoPlayerManager extends ChangeNotifier {
     _videoPlayerController = null;
     _videoStreamUrl = null;
     _videoTitle = null;
+    _videoThumbnailUrl = null;
+    _videoChannelTitle = null;
 
     notifyListeners();
   }

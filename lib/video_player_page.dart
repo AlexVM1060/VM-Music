@@ -4,6 +4,8 @@ import 'dart:developer';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:myapp/models/video_history.dart';
+import 'package:myapp/services/playlist_service.dart';
 import 'package:myapp/video_player_manager.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
@@ -24,6 +26,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
   final _ytExplode = YoutubeExplode();
   List<Video> _relatedVideos = [];
   String _videoTitle = '';
+  Video? _video;
   Offset _dragOffset = const Offset(200, 400);
   bool _isLoading = true;
 
@@ -65,10 +68,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       final videoFuture = _ytExplode.videos.get(VideoId(widget.videoId));
 
       final manifest = await manifestFuture;
-      final video = await videoFuture;
+      _video = await videoFuture;
 
       if (mounted) {
-        _videoTitle = video.title;
+        _videoTitle = _video!.title;
       }
 
       _muxedStreamInfos = manifest.muxed.sortByVideoQuality().reversed.toList();
@@ -80,7 +83,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       _selectedStreamInfo = _muxedStreamInfos.first;
       await _buildPlayerWithStream(_selectedStreamInfo!);
 
-      _fetchRelatedVideos(video);
+      _fetchRelatedVideos(_video!);
     } catch (e) {
       log('Error initializing player: $e');
       if (mounted) {
@@ -114,6 +117,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
           controller: _videoPlayerController!,
           streamUrl: streamInfo.url.toString(),
           title: _videoTitle,
+          thumbnailUrl: _video!.thumbnails.mediumResUrl,
+          channelTitle: _video!.author,
         );
 
         _chewieController = ChewieController(
@@ -306,6 +311,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
   }
 
   Widget _buildMaximizedLayout(Widget player) {
+    final playlistService = Provider.of<PlaylistService>(context, listen: false);
+
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -349,6 +356,24 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
                     ),
                   ),
                   const SizedBox(width: 16),
+                   IconButton(
+                    icon: const Icon(Icons.favorite_border),
+                    tooltip: 'Añadir a favoritos',
+                    onPressed: () {
+                      if (_video == null) return;
+                      final videoHistory = VideoHistory(
+                        videoId: _video!.id.value,
+                        title: _video!.title,
+                        thumbnailUrl: _video!.thumbnails.mediumResUrl,
+                        channelTitle: _video!.author,
+                        watchedAt: DateTime.now(),
+                      );
+                      playlistService.addVideoToPlaylist('Videos favoritos', videoHistory);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Añadido a favoritos')),
+                      );
+                    },
+                  ),
                   IconButton(
                     icon: const Icon(Icons.settings),
                     tooltip: 'Cambiar Calidad',

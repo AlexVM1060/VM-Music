@@ -1,15 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:myapp/account_page.dart';
 import 'package:myapp/audio_handler.dart';
 import 'package:myapp/downloads_page.dart';
+import 'package:myapp/models/playlist.dart';
+import 'package:myapp/models/video_history.dart';
 import 'package:myapp/router.dart'; // Importa la configuración del router
 import 'package:myapp/search_page.dart';
+import 'package:myapp/services/history_service.dart';
+import 'package:myapp/services/playlist_service.dart';
 import 'package:myapp/video_player_manager.dart';
 import 'package:myapp/video_player_page.dart';
 import 'package:provider/provider.dart';
+import 'package:path_provider/path_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Hive initialization
+  final appDocumentDir = await getApplicationDocumentsDirectory();
+  await Hive.initFlutter(appDocumentDir.path);
+  Hive.registerAdapter(VideoHistoryAdapter());
+  Hive.registerAdapter(PlaylistAdapter());
+
   // Inicializamos el servicio de audio y lo preparamos para inyectarlo
   final audioHandler = await initAudioService();
   runApp(
@@ -18,6 +32,8 @@ void main() async {
         // Inyectamos el audioHandler en el VideoPlayerManager
         ChangeNotifierProvider(create: (_) => VideoPlayerManager(audioHandler)),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        Provider(create: (_) => HistoryService()),
+        Provider(create: (_) => PlaylistService()),
       ],
       child: const MyApp(),
     ),
@@ -117,6 +133,7 @@ class _MainTabsState extends State<MainTabs> {
   static const List<Widget> _pages = <Widget>[
     SearchPage(),
     DownloadsPage(),
+    AccountPage(),
   ];
 
   void _onItemTapped(int index) {
@@ -131,7 +148,7 @@ class _MainTabsState extends State<MainTabs> {
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: _selectedIndex == 2 ? null : AppBar(
         title: Text('VM Player', style: GoogleFonts.oswald(fontWeight: FontWeight.bold, fontSize: 24)),
         actions: [
           IconButton(
@@ -148,6 +165,7 @@ class _MainTabsState extends State<MainTabs> {
               items: const <BottomNavigationBarItem>[
                 BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'),
                 BottomNavigationBarItem(icon: Icon(Icons.download), label: 'Descargas'),
+                BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Cuenta'),
               ],
               currentIndex: _selectedIndex,
               onTap: _onItemTapped,
