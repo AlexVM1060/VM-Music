@@ -1,8 +1,10 @@
+
 import 'package:flutter/material.dart';
 import 'package:myapp/models/playlist.dart';
 import 'package:myapp/models/downloaded_video.dart';
 import 'package:myapp/services/download_service.dart';
 import 'package:myapp/video_player_manager.dart';
+import 'package:myapp/offline_video_player_page.dart'; // Importar la nueva página
 import 'package:provider/provider.dart';
 import 'package:collection/collection.dart';
 
@@ -68,8 +70,15 @@ class PlaylistDetailsPage extends StatelessWidget {
                           : null,
                       onTap: () {
                         if (downloadedVideo != null) {
-                          videoManager.playLocal(downloadedVideo);
+                          // Navegar a la página de reproducción offline
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => OfflineVideoPlayerPage(video: downloadedVideo),
+                            ),
+                          );
                         } else {
+                          // Reproducir online como antes
                           videoManager.play(video.videoId);
                         }
                       },
