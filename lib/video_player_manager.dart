@@ -5,77 +5,70 @@ import 'package:flutter/material.dart';
 import 'package:myapp/models/video_history.dart';
 import 'package:myapp/services/history_service.dart';
 import 'package:video_player/video_player.dart';
-import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-// Gestor de estado para el reproductor de vídeo.
-// Utiliza ChangeNotifier para notificar a los widgets cuando hay cambios.
 class VideoPlayerManager extends ChangeNotifier {
   final HistoryService _historyService = HistoryService();
   String? _currentVideoId;
   bool _isMinimized = false;
   bool _isFullScreen = false;
 
-  // Nuevas propiedades para el audio en segundo plano
   final AudioHandler _audioHandler;
   VideoPlayerController? _videoPlayerController;
-  String? _videoStreamUrl;
+  String? _videoStreamUrl; // Puede ser una URL o una ruta de archivo local
   String? _videoTitle;
   String? _videoThumbnailUrl;
   String? _videoChannelTitle;
-  bool _isInBackground = false; // Flag para saber si está en modo audio de fondo
+  bool _isInBackground = false;
+  bool _isLocal = false; // Flag para indicar si el video es de un archivo local
 
-  VideoPlayerManager(this._audioHandler); // Inyectar AudioHandler
+  VideoPlayerManager(this._audioHandler);
 
   String? get currentVideoId => _currentVideoId;
   bool get isMinimized => _isMinimized;
   bool get isFullScreen => _isFullScreen;
 
-  // Función para registrar los datos del reproductor cuando está listo
   void setPlayerData({
     required VideoPlayerController controller,
     String? streamUrl,
     required String title,
     required String thumbnailUrl,
     required String channelTitle,
+    bool isLocal = false, // Añadir parámetro isLocal
   }) {
     _videoPlayerController = controller;
     _videoStreamUrl = streamUrl;
     _videoTitle = title;
     _videoThumbnailUrl = thumbnailUrl;
     _videoChannelTitle = channelTitle;
+    _isLocal = isLocal; // Guardar el flag
   }
 
-  // Función para iniciar la reproducción de un nuevo vídeo
-  Future<void> play(String videoId) async {
+  Future<void> play(String videoId, {bool isLocalVideo = false}) async {
     if (_currentVideoId != null) {
-      close(); // Cierra el vídeo y audio actual si lo hay
+      close();
     }
     _currentVideoId = videoId;
     _isMinimized = false;
     _isFullScreen = false;
     _isInBackground = false;
+    _isLocal = isLocalVideo;
 
-    // Save to history
-    final yt = YoutubeExplode();
-    try {
-        final video = await yt.videos.get(videoId);
-        _historyService.addVideoToHistory(
+    if (!_isLocal) {
+      // Guardar en el historial solo para videos en línea
+       _historyService.addVideoToHistory(
         VideoHistory(
-            videoId: video.id.value,
-            title: video.title,
-            thumbnailUrl: video.thumbnails.mediumResUrl,
-            channelTitle: video.author,
+            videoId: videoId,
+            title: _videoTitle ?? '',
+            thumbnailUrl: _videoThumbnailUrl ?? '',
+            channelTitle: _videoChannelTitle ?? '',
             watchedAt: DateTime.now(),
         ),
         );
-    } finally {
-        yt.close();
     }
 
     notifyListeners();
   }
 
-  // Cambia a modo de solo audio en segundo plano
   Future<void> switchToBackgroundAudio() async {
     if (_videoPlayerController == null ||
         _videoStreamUrl == null ||
@@ -86,17 +79,16 @@ class VideoPlayerManager extends ChangeNotifier {
     final position = await _videoPlayerController!.position;
     if (position == null) return;
 
-    // Pausa el vídeo
     await _videoPlayerController!.pause();
 
-    // Inicia el audio en segundo plano con audio_service
     final mediaItem = MediaItem(
       id: _videoStreamUrl!,
       title: _videoTitle ?? 'Video sin título',
-      // Aquí podrías añadir más metadatos como el artista o la portada
-      // artUri: Uri.parse('...'),
+      artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
+      artist: _videoChannelTitle,
+      extras: <String, dynamic>{'isLocal': _isLocal},
     );
-    // Pasamos el item a la cola y buscamos la posición correcta
+
     await _audioHandler.addQueueItem(mediaItem);
     await _audioHandler.seek(position);
     await _audioHandler.play();
@@ -104,24 +96,19 @@ class VideoPlayerManager extends ChangeNotifier {
     _isInBackground = true;
   }
 
-  // Vuelve a la reproducción de vídeo en primer plano
   Future<void> switchToForegroundVideo() async {
     if (!_isInBackground || _videoPlayerController == null) return;
 
-    // Obtiene la posición actual del audio en segundo plano
     final backgroundPosition = _audioHandler.playbackState.value.updatePosition;
 
-    // Detiene el audio en segundo plano
     await _audioHandler.stop();
 
-    // Reanuda el vídeo desde la posición correcta
     await _videoPlayerController!.seekTo(backgroundPosition);
     await _videoPlayerController!.play();
 
     _isInBackground = false;
   }
 
-  // Función para minimizar el reproductor (modo PiP)
   void minimize() {
     if (!_isMinimized) {
       _isMinimized = true;
@@ -129,7 +116,6 @@ class VideoPlayerManager extends ChangeNotifier {
     }
   }
 
-  // Función para maximizar el reproductor desde el modo PiP
   void maximize() {
     if (_isMinimized) {
       _isMinimized = false;
@@ -137,7 +123,6 @@ class VideoPlayerManager extends ChangeNotifier {
     }
   }
 
-  // Función para cerrar el reproductor
   void close() {
     _videoPlayerController?.pause();
     _audioHandler.stop();
@@ -151,6 +136,7 @@ class VideoPlayerManager extends ChangeNotifier {
     _videoTitle = null;
     _videoThumbnailUrl = null;
     _videoChannelTitle = null;
+    _isLocal = false;
 
     notifyListeners();
   }

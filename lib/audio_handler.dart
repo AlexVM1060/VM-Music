@@ -1,3 +1,6 @@
+
+import 'dart:io';
+
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -15,9 +18,20 @@ Future<AudioHandler> initAudioService() async {
 
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
+  final _playlist = ConcatenatingAudioSource(children: []);
 
   MyAudioHandler() {
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
+    _listenForCurrentSongIndexChanges();
+     _player.setAudioSource(_playlist);
+  }
+
+  void _listenForCurrentSongIndexChanges() {
+    _player.currentIndexStream.listen((index) {
+      if (index != null && index < mediaItem.value!.id.length) {
+        mediaItem.add(mediaItem.value);
+      }
+    });
   }
 
   @override
@@ -34,11 +48,31 @@ class MyAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> addQueueItem(MediaItem mediaItem) async {
-    // Tu lógica para añadir a la cola, si es necesario
-    // Por ahora, simplemente cargamos el MediaItem
-    await _player.setAudioSource(AudioSource.uri(Uri.parse(mediaItem.id)));
-    this.mediaItem.add(mediaItem);
+    final audioSource = _createAudioSource(mediaItem);
+    await _playlist.clear();
+    await _playlist.add(audioSource);
+     this.mediaItem.add(mediaItem);
+   
   }
+
+    @override
+  Future<void> updateQueue(List<MediaItem> queue) async {
+    await _playlist.clear();
+    final audioSources = queue.map(_createAudioSource).toList();
+    await _playlist.addAll(audioSources);
+    this.queue.add(queue);
+  }
+
+
+  AudioSource _createAudioSource(MediaItem mediaItem) {
+  // Support for online and offline playback
+  if (mediaItem.extras?['isLocal'] == true) {
+    return AudioSource.file(mediaItem.id, tag: mediaItem);
+  } else {
+    return AudioSource.uri(Uri.parse(mediaItem.id), tag: mediaItem);
+  }
+}
+
 
   PlaybackState _transformEvent(PlaybackEvent event) {
     return PlaybackState(
@@ -60,6 +94,8 @@ class MyAudioHandler extends BaseAudioHandler {
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
       queueIndex: event.currentIndex,
+      // Announce the update time to the system so it knows when the state was last updated.
+      updateTime: DateTime.now(),
     );
   }
 
