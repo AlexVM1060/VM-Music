@@ -42,10 +42,10 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
     super.didChangeAppLifecycleState(state);
 
     if (state == AppLifecycleState.paused) {
-      if (!_manager.isMinimized) {
-        _manager.switchToBackgroundAudio();
-      }
+      // Simplificado: El manager se encarga de la lógica.
+      _manager.switchToBackgroundAudio();
     } else if (state == AppLifecycleState.resumed) {
+      // Simplificado: El manager se encarga de la lógica.
       _manager.switchToForegroundVideo();
     }
   }
@@ -68,13 +68,14 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
       await _videoPlayerController!.initialize();
 
       if (mounted) {
+        _manager.play(widget.video.videoId, isLocalVideo: true);
         _manager.setPlayerData(
           controller: _videoPlayerController!,
-          streamUrl: widget.video.filePath, // Path for local file
+          streamUrl: widget.video.filePath, 
           title: widget.video.title,
           thumbnailUrl: widget.video.thumbnailUrl,
           channelTitle: widget.video.channelTitle,
-           isLocal: true,
+          isLocal: true,
         );
 
         _chewieController = ChewieController(
@@ -139,8 +140,12 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
       );
     }
 
-    if (_chewieController == null) {
-      return const SizedBox.shrink();
+    if (_chewieController == null || _chewieController!.videoPlayerController.value.isInitialized == false) {
+      return const Scaffold(
+        body: Center(
+          child: CupertinoActivityIndicator(),
+        ),
+      );
     }
 
     final playerWidget = Chewie(controller: _chewieController!);
@@ -240,11 +245,11 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage>
                   ),
                   const SizedBox(width: 16),
                    
+                  
                 ],
               ),
             ),
             const Divider(),
-            // Offline-specific UI elements can be added here
           ],
         ),
       ),

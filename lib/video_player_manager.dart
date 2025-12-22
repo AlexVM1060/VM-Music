@@ -14,18 +14,19 @@ class VideoPlayerManager extends ChangeNotifier {
 
   final AudioHandler _audioHandler;
   VideoPlayerController? _videoPlayerController;
-  String? _videoStreamUrl; // Puede ser una URL o una ruta de archivo local
+  String? _videoStreamUrl; 
   String? _videoTitle;
   String? _videoThumbnailUrl;
   String? _videoChannelTitle;
   bool _isInBackground = false;
-  bool _isLocal = false; // Flag para indicar si el video es de un archivo local
+  bool _isLocal = false; 
 
   VideoPlayerManager(this._audioHandler);
 
   String? get currentVideoId => _currentVideoId;
   bool get isMinimized => _isMinimized;
   bool get isFullScreen => _isFullScreen;
+  bool get isInBackground => _isInBackground;
 
   void setPlayerData({
     required VideoPlayerController controller,
@@ -33,14 +34,14 @@ class VideoPlayerManager extends ChangeNotifier {
     required String title,
     required String thumbnailUrl,
     required String channelTitle,
-    bool isLocal = false, // Añadir parámetro isLocal
+    bool isLocal = false,
   }) {
     _videoPlayerController = controller;
     _videoStreamUrl = streamUrl;
     _videoTitle = title;
     _videoThumbnailUrl = thumbnailUrl;
     _videoChannelTitle = channelTitle;
-    _isLocal = isLocal; // Guardar el flag
+    _isLocal = isLocal;
   }
 
   Future<void> play(String videoId, {bool isLocalVideo = false}) async {
@@ -54,18 +55,16 @@ class VideoPlayerManager extends ChangeNotifier {
     _isLocal = isLocalVideo;
 
     if (!_isLocal) {
-      // Guardar en el historial solo para videos en línea
-       _historyService.addVideoToHistory(
+      _historyService.addVideoToHistory(
         VideoHistory(
-            videoId: videoId,
-            title: _videoTitle ?? '',
-            thumbnailUrl: _videoThumbnailUrl ?? '',
-            channelTitle: _videoChannelTitle ?? '',
-            watchedAt: DateTime.now(),
+          videoId: videoId,
+          title: _videoTitle ?? '',
+          thumbnailUrl: _videoThumbnailUrl ?? '',
+          channelTitle: _videoChannelTitle ?? '',
+          watchedAt: DateTime.now(),
         ),
-        );
+      );
     }
-
     notifyListeners();
   }
 
@@ -75,10 +74,9 @@ class VideoPlayerManager extends ChangeNotifier {
         !_videoPlayerController!.value.isPlaying) {
       return;
     }
+    if (_isInBackground) return;
 
-    final position = await _videoPlayerController!.position;
-    if (position == null) return;
-
+    final position = _videoPlayerController!.value.position;
     await _videoPlayerController!.pause();
 
     final mediaItem = MediaItem(
@@ -100,11 +98,12 @@ class VideoPlayerManager extends ChangeNotifier {
     if (!_isInBackground || _videoPlayerController == null) return;
 
     final backgroundPosition = _audioHandler.playbackState.value.updatePosition;
-
     await _audioHandler.stop();
 
-    await _videoPlayerController!.seekTo(backgroundPosition);
-    await _videoPlayerController!.play();
+    if (_videoPlayerController!.value.isInitialized) {
+      await _videoPlayerController!.seekTo(backgroundPosition);
+      await _videoPlayerController!.play();
+    }
 
     _isInBackground = false;
   }
@@ -124,7 +123,7 @@ class VideoPlayerManager extends ChangeNotifier {
   }
 
   void close() {
-    _videoPlayerController?.pause();
+    _videoPlayerController?.dispose();
     _audioHandler.stop();
 
     _currentVideoId = null;
@@ -150,7 +149,8 @@ class VideoPlayerManager extends ChangeNotifier {
 
   @override
   void dispose() {
-    close();
+    _audioHandler.stop();
+    _videoPlayerController?.dispose();
     super.dispose();
   }
 }

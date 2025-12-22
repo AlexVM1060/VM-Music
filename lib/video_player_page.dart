@@ -49,10 +49,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     super.didChangeAppLifecycleState(state);
 
     if (state == AppLifecycleState.paused) {
-      if (!_manager.isMinimized) {
-        _manager.switchToBackgroundAudio();
-      }
+      // Simplificado: Siempre intenta cambiar a audio en segundo plano al pausar la app.
+      // El manager se encargará de verificar si es necesario.
+      _manager.switchToBackgroundAudio();
     } else if (state == AppLifecycleState.resumed) {
+      // Simplificado: Siempre intenta volver al vídeo en primer plano al reanudar.
+      // El manager se encargará de verificar si estaba en segundo plano.
       _manager.switchToForegroundVideo();
     }
   }
@@ -226,6 +228,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // No llames a _manager.close() aquí, para permitir que el audio continúe si es necesario.
     _disposeControllers();
     _ytExplode.close();
     super.dispose();
@@ -246,8 +249,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       );
     }
 
-    if (_chewieController == null) {
-      return const SizedBox.shrink();
+    if (_chewieController == null || _chewieController!.videoPlayerController.value.isInitialized == false) {
+       return const Scaffold(
+        body: Center(
+          child: CupertinoActivityIndicator(),
+        ),
+      );
     }
 
     final playerWidget = Chewie(controller: _chewieController!);
@@ -455,7 +462,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
             right: 0,
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
-              onPressed: _manager.close,
+              onPressed: _manager.close, // Ahora close detiene todo limpiamente
               child:
                   const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
             ),
