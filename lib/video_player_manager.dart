@@ -21,6 +21,7 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
   String? _videoTitle;
   String? _videoThumbnailUrl;
   String? _videoChannelTitle;
+  Duration? _videoDuration; // Nuevo campo para la duración
   bool _isLocal = false;
   bool _isInBackground = false;
 
@@ -75,6 +76,7 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
     required String title,
     required String thumbnailUrl,
     required String channelTitle,
+    Duration? duration, // Parámetro añadido
     bool isLocal = false,
   }) {
     _videoPlayerController = controller;
@@ -82,7 +84,20 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
     _videoTitle = title;
     _videoThumbnailUrl = thumbnailUrl;
     _videoChannelTitle = channelTitle;
+    _videoDuration = duration; // Se guarda la duración
     _isLocal = isLocal;
+
+    if (!_isLocal) {
+      _historyService.addVideoToHistory(
+        VideoHistory(
+          videoId: _currentVideoId!,
+          title: _videoTitle ?? '',
+          thumbnailUrl: _videoThumbnailUrl ?? '',
+          channelTitle: _videoChannelTitle ?? '',
+          watchedAt: DateTime.now(),
+        ),
+      );
+    }
   }
 
   Future<void> play(String videoId, {bool isLocalVideo = false}) async {
@@ -95,17 +110,6 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
     _isInBackground = false;
     _isLocal = isLocalVideo;
 
-    if (!_isLocal) {
-      _historyService.addVideoToHistory(
-        VideoHistory(
-          videoId: videoId,
-          title: _videoTitle ?? '',
-          thumbnailUrl: _videoThumbnailUrl ?? '',
-          channelTitle: _videoChannelTitle ?? '',
-          watchedAt: DateTime.now(),
-        ),
-      );
-    }
     notifyListeners();
   }
 
@@ -124,6 +128,7 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
       title: _videoTitle ?? 'Video sin título',
       artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
       artist: _videoChannelTitle,
+      duration: _videoDuration, // Se pasa la duración al MediaItem
       extras: <String, dynamic>{'isLocal': _isLocal},
     );
 
@@ -175,6 +180,7 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
     _videoTitle = null;
     _videoThumbnailUrl = null;
     _videoChannelTitle = null;
+    _videoDuration = null; // Limpiar duración
     _isLocal = false;
 
     notifyListeners();

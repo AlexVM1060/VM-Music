@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 
+import 'package:audio_service/audio_service.dart';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -112,6 +113,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           title: _videoTitle,
           thumbnailUrl: _video!.thumbnails.mediumResUrl,
           channelTitle: _video!.author,
+          duration: _video!.duration, // Se pasa la duración del video
         );
 
         _chewieController = ChewieController(
@@ -398,8 +400,27 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
                 ],
               ),
             ),
+             Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: StreamBuilder<PlaybackState>(
+                stream: AudioService.playbackStateStream,
+                builder: (context, snapshot) {
+                  final playbackState = snapshot.data;
+                  final position = playbackState?.updatePosition ?? Duration.zero;
+                  final duration = _video?.duration ?? Duration.zero;
+
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(_formatDuration(position)),
+                      Text(_formatDuration(duration)),
+                    ],
+                  );
+                },
+              ),
+            ),
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
+              padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
               child: Text(
                 'Videos Relacionados',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -447,6 +468,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       ),
     );
   }
+
+    String _formatDuration(Duration duration) {
+    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$minutes:$seconds';
+  }
+
 
   Widget _buildMinimizedLayout(double width, double height, Widget player) {
     return SizedBox(

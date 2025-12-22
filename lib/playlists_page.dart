@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:myapp/models/playlist.dart';
-import 'package:myapp/playlist_detail_page.dart';
 import 'package:myapp/services/playlist_service.dart';
 import 'package:provider/provider.dart';
 
@@ -89,11 +89,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                 title: Text(playlist.name),
                 subtitle: Text('${playlist.videos.length} videos'),
                 onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => PlaylistDetailPage(playlist: playlist),
-                    ),
-                  ).then((_) => _loadPlaylists());
+                  context.push('/playlist/${playlist.name}').then((_) => _loadPlaylists());
                 },
               );
             },

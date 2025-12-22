@@ -1,24 +1,25 @@
 import 'package:go_router/go_router.dart';
-import 'package:myapp/main.dart'; // Importa el AppShell
+import 'package:myapp/main.dart';
+import 'package:myapp/models/playlist.dart';
+import 'package:myapp/playlist_detail_page.dart';
 
-// 1. Define la configuración del router
 final GoRouter router = GoRouter(
-  // 2. Define la lista de rutas de la aplicación
   routes: <RouteBase>[
-    // 3. Define la ruta raíz ('/')
     GoRoute(
       path: '/',
       builder: (context, state) {
-        // Esta ruta inicial apunta a la estructura principal de la app.
         return const AppShell();
       },
-      // Aquí se podrían añadir sub-rutas en el futuro, por ejemplo:
-      // routes: <RouteBase>[
-      //   GoRoute(
-      //     path: 'settings',
-      //     builder: (context, state) => const SettingsPage(),
-      //   ),
-      // ],
+      routes: <RouteBase>[
+        GoRoute(
+          path: 'playlist/:name',
+          builder: (context, state) {
+            final playlistName = state.pathParameters['name']!;
+            final playlist = Playlist(name: playlistName, videos: []);
+            return PlaylistDetailPage(playlist: playlist);
+          },
+        ),
+      ],
     ),
   ],
 );

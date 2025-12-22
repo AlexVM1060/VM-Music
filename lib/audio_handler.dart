@@ -28,7 +28,7 @@ class MyAudioHandler extends BaseAudioHandler {
 
   void _listenForCurrentSongIndexChanges() {
     _player.currentIndexStream.listen((index) {
-      if (index != null && index < mediaItem.value!.id.length) {
+      if (index != null && mediaItem.value != null) {
         mediaItem.add(mediaItem.value);
       }
     });
