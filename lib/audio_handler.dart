@@ -1,6 +1,5 @@
-import 'dart:io';
 import 'package:audio_service/audio_service.dart';
-import 'package:video_player/video_player.dart';
+import 'package:just_audio/just_audio.dart';
 
 Future<AudioHandler> initAudioService() async {
   return await AudioService.init(
@@ -15,68 +14,69 @@ Future<AudioHandler> initAudioService() async {
 }
 
 class MyAudioHandler extends BaseAudioHandler {
-  VideoPlayerController? _controller;
-  VideoPlayerController? get videoPlayerController => _controller;
+  final _player = AudioPlayer();
+
+  MyAudioHandler() {
+    _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
+  }
+  
+    @override
+  Future<void> play() => _player.play();
 
   @override
-  Future<void> play() async {
-    if (_controller != null) {
-      await _controller!.play();
-      playbackState.add(playbackState.value.copyWith(playing: true));
-    }
-  }
+  Future<void> pause() => _player.pause();
 
   @override
-  Future<void> pause() async {
-    if (_controller != null) {
-      await _controller!.pause();
-      playbackState.add(playbackState.value.copyWith(playing: false));
-    }
-  }
-
-  @override
-  Future<void> seek(Duration position) async {
-    if (_controller != null) {
-      await _controller!.seekTo(position);
-    }
-  }
+  Future<void> seek(Duration position) => _player.seek(position);
 
   @override
   Future<void> stop() async {
-    if (_controller != null) {
-      await _controller!.pause();
-      await _controller!.seekTo(Duration.zero);
-      playbackState.add(playbackState.value.copyWith(playing: false));
-    }
+    await _player.stop();
+    return super.stop();
   }
 
-  Future<void> setVideo(String url, {bool isLocal = false}) async {
-    if (_controller != null) {
-      await _controller!.dispose();
+  @override
+  Future<void> addQueueItem(MediaItem mediaItem) async {
+    this.mediaItem.add(mediaItem);
+    await _player.setAudioSource(AudioSource.uri(Uri.parse(mediaItem.id)));
+  }
+
+  PlaybackState _transformEvent(PlaybackEvent event) {
+  return PlaybackState(
+    controls: [
+      MediaControl.rewind,
+      if (_player.playing) MediaControl.pause else MediaControl.play,
+      MediaControl.stop,
+      MediaControl.fastForward,
+    ],
+    systemActions: const {
+      MediaAction.seek,
+      MediaAction.seekForward,
+      MediaAction.seekBackward,
+    },
+    androidCompactActionIndices: const [0, 1, 3],
+    processingState: _mapProcessingState(_player.processingState),
+    playing: _player.playing,
+    updatePosition: _player.position,
+    bufferedPosition: _player.bufferedPosition,
+    speed: _player.speed,
+    queueIndex: event.currentIndex,
+  );
+}
+
+
+  AudioProcessingState _mapProcessingState(ProcessingState processingState) {
+    switch (processingState) {
+      case ProcessingState.idle:
+        return AudioProcessingState.idle;
+      case ProcessingState.loading:
+        return AudioProcessingState.loading;
+      case ProcessingState.buffering:
+        return AudioProcessingState.buffering;
+      case ProcessingState.ready:
+        return AudioProcessingState.ready;
+      case ProcessingState.completed:
+        return AudioProcessingState.completed;
     }
-    if (isLocal) {
-      _controller = VideoPlayerController.file(File(url));
-    } else {
-      _controller = VideoPlayerController.networkUrl(Uri.parse(url));
-    }
-    await _controller!.initialize();
-    mediaItem.add(
-      MediaItem(
-        id: url,
-        title: 'Video',
-        duration: _controller!.value.duration,
-      ),
-    );
-    _controller!.addListener(() {
-      playbackState.add(
-        playbackState.value.copyWith(
-          updatePosition: _controller!.value.position,
-          bufferedPosition: _controller!.value.buffered.isNotEmpty 
-              ? _controller!.value.buffered.last.end 
-              : Duration.zero,
-          playing: _controller!.value.isPlaying,
-        ),
-      );
-    });
   }
 }

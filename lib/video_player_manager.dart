@@ -5,171 +5,124 @@ import 'package:flutter/material.dart';
 import 'package:myapp/models/video_history.dart';
 import 'package:myapp/services/history_service.dart';
 import 'package:video_player/video_player.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
+// Gestor de estado para el reproductor de vídeo.
+// Utiliza ChangeNotifier para notificar a los widgets cuando hay cambios.
+class VideoPlayerManager extends ChangeNotifier {
   final HistoryService _historyService = HistoryService();
-  final AudioHandler _audioHandler;
-
   String? _currentVideoId;
   bool _isMinimized = false;
   bool _isFullScreen = false;
 
+  // Nuevas propiedades para el audio en segundo plano
+  final AudioHandler _audioHandler;
   VideoPlayerController? _videoPlayerController;
   String? _videoStreamUrl;
   String? _videoTitle;
   String? _videoThumbnailUrl;
   String? _videoChannelTitle;
-  Duration? _videoDuration;
-  bool _isLocal = false;
-  bool _isInBackground = false;
+  bool _isInBackground = false; // Flag para saber si está en modo audio de fondo
 
-  // Posición centralizada y sincronizada
-  Duration _currentPosition = Duration.zero;
-  StreamSubscription<PlaybackState>? _playbackStateSubscription;
-  VoidCallback? _videoPlayerListener;
+  VideoPlayerManager(this._audioHandler); // Inyectar AudioHandler
 
-  VideoPlayerManager(this._audioHandler);
-
-  AudioHandler get audioHandler => _audioHandler;
   String? get currentVideoId => _currentVideoId;
   bool get isMinimized => _isMinimized;
   bool get isFullScreen => _isFullScreen;
-  bool get isInBackground => _isInBackground;
-  Duration get currentPosition => _currentPosition; // Getter para la posición
 
-  void init() {
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _videoPlayerController?.removeListener(_videoPlayerListener ?? () {});
-    _videoPlayerController?.dispose();
-    _playbackStateSubscription?.cancel();
-    _audioHandler.stop();
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-    switch (state) {
-      case AppLifecycleState.paused:
-      case AppLifecycleState.inactive:
-      case AppLifecycleState.detached:
-      case AppLifecycleState.hidden:
-        if (_videoPlayerController != null && !_isInBackground) {
-          switchToBackgroundAudio();
-        }
-        break;
-      case AppLifecycleState.resumed:
-        if (_isInBackground) {
-          switchToForegroundVideo();
-        }
-        break;
-    }
-  }
-
+  // Función para registrar los datos del reproductor cuando está listo
   void setPlayerData({
     required VideoPlayerController controller,
     String? streamUrl,
     required String title,
     required String thumbnailUrl,
     required String channelTitle,
-    Duration? duration,
-    bool isLocal = false,
   }) {
     _videoPlayerController = controller;
     _videoStreamUrl = streamUrl;
     _videoTitle = title;
     _videoThumbnailUrl = thumbnailUrl;
     _videoChannelTitle = channelTitle;
-    _videoDuration = duration;
-    _isLocal = isLocal;
-
-    // Sincronizar posición desde el reproductor de video
-    _videoPlayerListener = () {
-      if (_videoPlayerController != null && _videoPlayerController!.value.isInitialized) {
-        _currentPosition = _videoPlayerController!.value.position;
-      }
-    };
-    _videoPlayerController!.addListener(_videoPlayerListener!);
-
-    if (!_isLocal) {
-      _historyService.addVideoToHistory(
-        VideoHistory(
-          videoId: _currentVideoId!,
-          title: _videoTitle ?? '',
-          thumbnailUrl: _videoThumbnailUrl ?? '',
-          channelTitle: _videoChannelTitle ?? '',
-          watchedAt: DateTime.now(),
-        ),
-      );
-    }
   }
 
-  Future<void> play(String videoId, {bool isLocalVideo = false}) async {
+  // Función para iniciar la reproducción de un nuevo vídeo
+  Future<void> play(String videoId) async {
     if (_currentVideoId != null) {
-      await close();
+      close(); // Cierra el vídeo y audio actual si lo hay
     }
     _currentVideoId = videoId;
     _isMinimized = false;
     _isFullScreen = false;
     _isInBackground = false;
-    _isLocal = isLocalVideo;
-    _currentPosition = Duration.zero; // Resetear posición
+
+    // Save to history
+    final yt = YoutubeExplode();
+    try {
+        final video = await yt.videos.get(videoId);
+        _historyService.addVideoToHistory(
+        VideoHistory(
+            videoId: video.id.value,
+            title: video.title,
+            thumbnailUrl: video.thumbnails.mediumResUrl,
+            channelTitle: video.author,
+            watchedAt: DateTime.now(),
+        ),
+        );
+    } finally {
+        yt.close();
+    }
 
     notifyListeners();
   }
 
+  // Cambia a modo de solo audio en segundo plano
   Future<void> switchToBackgroundAudio() async {
-    if (_videoPlayerController == null || !_videoPlayerController!.value.isInitialized) return;
-    if (_isInBackground) return;
+    if (_videoPlayerController == null ||
+        _videoStreamUrl == null ||
+        !_videoPlayerController!.value.isPlaying) {
+      return;
+    }
 
-    _isInBackground = true;
-    _currentPosition = _videoPlayerController!.value.position;
+    final position = await _videoPlayerController!.position;
+    if (position == null) return;
+
+    // Pausa el vídeo
     await _videoPlayerController!.pause();
 
+    // Inicia el audio en segundo plano con audio_service
     final mediaItem = MediaItem(
-      id: _videoStreamUrl ?? _currentVideoId!,
+      id: _videoStreamUrl!,
       title: _videoTitle ?? 'Video sin título',
-      artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
       artist: _videoChannelTitle,
-      duration: _videoDuration,
-      extras: <String, dynamic>{'isLocal': _isLocal},
+      artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
+      duration: _videoPlayerController!.value.duration,
     );
+    // Pasamos el item a la cola y buscamos la posición correcta
+    await _audioHandler.addQueueItem(mediaItem);
+    await _audioHandler.seek(position);
+    await _audioHandler.play();
 
-    await _audioHandler.playMediaItem(mediaItem);
-    await _audioHandler.seek(_currentPosition);
-
-    // Sincronizar posición desde el audio en segundo plano
-    _playbackStateSubscription = _audioHandler.playbackState.listen((playbackState) {
-      _currentPosition = playbackState.updatePosition;
-    });
-
-    notifyListeners();
+    _isInBackground = true;
   }
 
+  // Vuelve a la reproducción de vídeo en primer plano
   Future<void> switchToForegroundVideo() async {
     if (!_isInBackground || _videoPlayerController == null) return;
 
-    // Cancelar la suscripción al estado del audio
-    await _playbackStateSubscription?.cancel();
-    _playbackStateSubscription = null;
+    // Obtiene la posición actual del audio en segundo plano
+    final backgroundPosition = _audioHandler.playbackState.value.updatePosition;
 
+    // Detiene el audio en segundo plano
     await _audioHandler.stop();
 
-    if (_videoPlayerController!.value.isInitialized) {
-      // Usar la posición sincronizada
-      await _videoPlayerController!.seekTo(_currentPosition);
-      await _videoPlayerController!.play();
-    }
+    // Reanuda el vídeo desde la posición correcta
+    await _videoPlayerController!.seekTo(backgroundPosition);
+    await _videoPlayerController!.play();
 
     _isInBackground = false;
-    notifyListeners();
   }
 
+  // Función para minimizar el reproductor (modo PiP)
   void minimize() {
     if (!_isMinimized) {
       _isMinimized = true;
@@ -177,6 +130,7 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  // Función para maximizar el reproductor desde el modo PiP
   void maximize() {
     if (_isMinimized) {
       _isMinimized = false;
@@ -184,11 +138,10 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> close() async {
-    _videoPlayerController?.removeListener(_videoPlayerListener ?? () {});
-    await _videoPlayerController?.dispose();
-    await _playbackStateSubscription?.cancel();
-    await _audioHandler.stop();
+  // Función para cerrar el reproductor
+  void close() {
+    _videoPlayerController?.pause();
+    _audioHandler.stop();
 
     _currentVideoId = null;
     _isMinimized = false;
@@ -199,11 +152,6 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
     _videoTitle = null;
     _videoThumbnailUrl = null;
     _videoChannelTitle = null;
-    _videoDuration = null;
-    _isLocal = false;
-    _currentPosition = Duration.zero;
-    _playbackStateSubscription = null;
-    _videoPlayerListener = null;
 
     notifyListeners();
   }
@@ -213,5 +161,11 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
       _isFullScreen = isFullScreen;
       notifyListeners();
     }
+  }
+
+  @override
+  void dispose() {
+    close();
+    super.dispose();
   }
 }

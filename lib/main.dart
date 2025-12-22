@@ -35,7 +35,8 @@ void main() async {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         Provider(create: (_) => HistoryService()),
         Provider(create: (_) => PlaylistService()),
-        ChangeNotifierProvider(create: (_) => DownloadService()),      ],
+        ChangeNotifierProvider(create: (_) => DownloadService()),
+      ],
       child: const MyApp(),
     ),
   );
@@ -46,7 +47,9 @@ class ThemeProvider with ChangeNotifier {
   ThemeMode get themeMode => _themeMode;
 
   void toggleTheme() {
-    _themeMode = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+    _themeMode = _themeMode == ThemeMode.light
+        ? ThemeMode.dark
+        : ThemeMode.light;
     notifyListeners();
   }
 }
@@ -56,12 +59,12 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const primarySeedColor = Colors.deepPurple;
+    
 
     final lightTheme = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color.fromARGB(255, 207, 21, 21),
+        seedColor: const Color.fromARGB(255, 255, 94, 0),
         brightness: Brightness.light,
       ),
       textTheme: GoogleFonts.robotoTextTheme(),
@@ -70,10 +73,12 @@ class MyApp extends StatelessWidget {
     final darkTheme = ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color.fromARGB(255, 207, 21, 21),
+        seedColor: const Color.fromARGB(255, 255, 94, 0),
         brightness: Brightness.dark,
       ),
-      textTheme: GoogleFonts.robotoTextTheme(ThemeData(brightness: Brightness.dark).textTheme),
+      textTheme: GoogleFonts.robotoTextTheme(
+        ThemeData(brightness: Brightness.dark).textTheme,
+      ),
     );
 
     return Consumer<ThemeProvider>(
@@ -95,12 +100,7 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Stack(
-      children: [
-        MainTabs(),
-        OverlayVideoPlayer(),
-      ],
-    );
+    return const Stack(children: [MainTabs(), OverlayVideoPlayer()]);
   }
 }
 
@@ -148,24 +148,45 @@ class _MainTabsState extends State<MainTabs> {
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     return Scaffold(
-      appBar: _selectedIndex == 2 ? null : AppBar(
-        title: Text('VM Player', style: GoogleFonts.oswald(fontWeight: FontWeight.bold, fontSize: 24)),
-        actions: [
-          IconButton(
-            icon: Icon(themeProvider.themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode),
-            onPressed: () => themeProvider.toggleTheme(),
-            tooltip: 'Cambiar tema',
-          ),
-        ],
-      ),
+      appBar: _selectedIndex == 2
+          ? null
+          : AppBar(
+              title: Text(
+                'VM Player',
+                style: GoogleFonts.oswald(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 24,
+                ),
+              ),
+              actions: [
+                IconButton(
+                  icon: Icon(
+                    themeProvider.themeMode == ThemeMode.dark
+                        ? Icons.light_mode
+                        : Icons.dark_mode,
+                  ),
+                  onPressed: () => themeProvider.toggleTheme(),
+                  tooltip: 'Cambiar tema',
+                ),
+              ],
+            ),
       body: _pages.elementAt(_selectedIndex),
       bottomNavigationBar: isFullScreen
           ? null
           : BottomNavigationBar(
               items: const <BottomNavigationBarItem>[
-                BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'),
-                BottomNavigationBarItem(icon: Icon(Icons.download), label: 'Descargas'),
-                BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Cuenta'),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.search),
+                  label: 'Buscar',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.download),
+                  label: 'Descargas',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.person),
+                  label: 'Cuenta',
+                ),
               ],
               currentIndex: _selectedIndex,
               onTap: _onItemTapped,
