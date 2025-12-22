@@ -4,10 +4,12 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:myapp/account_page.dart';
 import 'package:myapp/audio_handler.dart';
 import 'package:myapp/downloads_page.dart';
+import 'package:myapp/models/downloaded_video.dart';
 import 'package:myapp/models/playlist.dart';
 import 'package:myapp/models/video_history.dart';
-import 'package:myapp/router.dart'; // Importa la configuración del router
+import 'package:myapp/router.dart';
 import 'package:myapp/search_page.dart';
+import 'package:myapp/services/download_service.dart';
 import 'package:myapp/services/history_service.dart';
 import 'package:myapp/services/playlist_service.dart';
 import 'package:myapp/video_player_manager.dart';
@@ -18,23 +20,22 @@ import 'package:path_provider/path_provider.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Hive initialization
+  // Inicialización de Hive
   final appDocumentDir = await getApplicationDocumentsDirectory();
   await Hive.initFlutter(appDocumentDir.path);
   Hive.registerAdapter(VideoHistoryAdapter());
   Hive.registerAdapter(PlaylistAdapter());
+  Hive.registerAdapter(DownloadedVideoAdapter());
 
-  // Inicializamos el servicio de audio y lo preparamos para inyectarlo
   final audioHandler = await initAudioService();
   runApp(
     MultiProvider(
       providers: [
-        // Inyectamos el audioHandler en el VideoPlayerManager
         ChangeNotifierProvider(create: (_) => VideoPlayerManager(audioHandler)),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         Provider(create: (_) => HistoryService()),
         Provider(create: (_) => PlaylistService()),
-      ],
+        ChangeNotifierProvider(create: (_) => DownloadService()),      ],
       child: const MyApp(),
     ),
   );
@@ -77,9 +78,8 @@ class MyApp extends StatelessWidget {
 
     return Consumer<ThemeProvider>(
       builder: (context, themeProvider, child) {
-        // Cambia a MaterialApp.router y usa la configuración de go_router
         return MaterialApp.router(
-          routerConfig: router, // Asigna el router importado
+          routerConfig: router,
           title: 'VM Player',
           theme: lightTheme,
           darkTheme: darkTheme,
