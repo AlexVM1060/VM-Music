@@ -21,9 +21,9 @@ class OfflineVideoPlayerPage extends StatefulWidget {
 }
 
 class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage> {
-  late VideoPlayerController _videoPlayerController;
+  VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
-  late Future<void> _initializationFuture;
+  bool _isLoading = true;
   Offset _dragOffset = const Offset(200, 400);
 
   late final VideoPlayerManager _manager;
@@ -33,37 +33,66 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage> {
     super.initState();
     _manager = Provider.of<VideoPlayerManager>(context, listen: false);
     _manager.init();
-    _initializationFuture = _initializePlayer();
+    _initializePlayer();
   }
 
   Future<void> _initializePlayer() async {
-    final file = File(widget.video.filePath);
-    if (!await file.exists()) {
-      throw Exception('El archivo de video no existe en la ruta: ${widget.video.filePath}');
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final file = File(widget.video.filePath);
+      if (!await file.exists()) {
+        throw Exception('El archivo de video no existe');
+      }
+
+      await _disposeControllers();
+
+      _videoPlayerController = VideoPlayerController.file(file);
+      await _videoPlayerController!.initialize();
+
+      if (mounted) {
+        _manager.play(widget.video.videoId, isLocalVideo: true);
+        _manager.setPlayerData(
+          controller: _videoPlayerController!,
+          streamUrl: widget.video.filePath, 
+          title: widget.video.title,
+          thumbnailUrl: widget.video.thumbnailUrl,
+          channelTitle: widget.video.channelTitle,
+          isLocal: true,
+        );
+
+        _chewieController = ChewieController(
+          videoPlayerController: _videoPlayerController!,
+          autoPlay: true,
+          looping: false,
+          aspectRatio: 16 / 9,
+          allowFullScreen: true,
+        );
+
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      log('Error initializing offline player: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al reproducir el video: $e')),
+        );
+        _manager.close();
+      }
     }
+  }
 
-    _videoPlayerController = VideoPlayerController.file(file);
-    await _videoPlayerController.initialize();
-
-    // Una vez inicializado, configuramos Chewie y el manager
-    _chewieController = ChewieController(
-      videoPlayerController: _videoPlayerController,
-      autoPlay: true,
-      looping: false,
-      aspectRatio: 16 / 9,
-      allowFullScreen: true,
-      // Puedes añadir más configuraciones aquí si lo necesitas
-    );
-
-    _manager.play(widget.video.videoId, isLocalVideo: true);
-    _manager.setPlayerData(
-      controller: _videoPlayerController,
-      streamUrl: widget.video.filePath,
-      title: widget.video.title,
-      thumbnailUrl: widget.video.thumbnailUrl,
-      channelTitle: widget.video.channelTitle,
-      isLocal: true,
-    );
+  Future<void> _disposeControllers() async {
+    await _videoPlayerController?.dispose();
+    _chewieController?.dispose();
   }
 
   @override
@@ -71,7 +100,7 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.video.videoId != widget.video.videoId) {
       _disposeControllers();
-      _initializationFuture = _initializePlayer();
+      _initializePlayer();
     }
   }
 
@@ -81,49 +110,24 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage> {
     super.dispose();
   }
 
-  void _disposeControllers() {
-    _videoPlayerController.dispose();
-    _chewieController?.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
-      future: _initializationFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.done) {
-          if (snapshot.hasError) {
-            log('Error en FutureBuilder: ${snapshot.error}');
-            return Scaffold(
-              appBar: AppBar(title: const Text('Error')),
-              body: Center(
-                child: Text(
-                  'No se pudo cargar el video. ${snapshot.error}',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          // Si todo está bien, construye la UI del reproductor
-          return _buildPlayerUI();
-        } else {
-          // Mientras carga, muestra un indicador
-          return const Scaffold(
-            body: Center(
-              child: CupertinoActivityIndicator(),
-            ),
-          );
-        }
-      },
-    );
-  }
+    final isMinimized = _manager.isMinimized;
 
-  Widget _buildPlayerUI() {
-    final isMinimized = context.select((VideoPlayerManager m) => m.isMinimized);
     const double minimizedWidth = 250.0;
     const double minimizedHeight = 140.6;
 
-    final playerWidget = Chewie(controller: _chewieController!);
+    final playerWidget = _chewieController != null && _chewieController!.videoPlayerController.value.isInitialized
+        ? Chewie(controller: _chewieController!)
+        : const Center(child: CupertinoActivityIndicator());
+
+    if (_isLoading && !isMinimized) {
+      return Scaffold(
+        body: Center(
+          child: playerWidget,
+        ),
+      );
+    }
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 300),
@@ -221,8 +225,8 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage> {
                     icon: const Icon(Icons.delete, color: Colors.red),
                     tooltip: 'Eliminar descarga',
                     onPressed: () {
-                      downloadService.deleteVideo(widget.video.videoId);
-                      _manager.close();
+                      downloadService.deleteVideo(widget.video.videoId); // CORREGIDO
+                       _manager.close(); // Cierra el reproductor al borrar
                       Navigator.of(context).pop();
                     },
                   ),
@@ -253,7 +257,7 @@ class _OfflineVideoPlayerPageState extends State<OfflineVideoPlayerPage> {
               child: const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
             ),
           ),
-          Positioned(
+            Positioned(
             top: 0,
             left: 0,
             child: CupertinoButton(

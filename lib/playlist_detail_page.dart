@@ -1,8 +1,6 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:myapp/models/downloaded_video.dart';
 import 'package:myapp/models/playlist.dart';
-import 'package:myapp/models/video.dart';
 import 'package:myapp/offline_video_player_page.dart';
 import 'package:myapp/services/download_service.dart';
 import 'package:myapp/services/playlist_service.dart';
@@ -46,13 +44,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
             icon: const Icon(Icons.download_for_offline),
             tooltip: 'Descargar todo',
             onPressed: () {
-              final videosToDownload = _currentPlaylist.videos.map((videoHistory) => Video(
-                videoId: videoHistory.videoId,
-                title: videoHistory.title,
-                thumbnailUrl: videoHistory.thumbnailUrl,
-                channelTitle: videoHistory.channelTitle,
-              )).toList();
-              downloadService.downloadPlaylistVideos(videosToDownload);
+              downloadService.downloadPlaylistVideos(_currentPlaylist.videos);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Iniciando descarga de la playlist...')),
               );
@@ -88,15 +80,8 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                             (v) => v.videoId == video.videoId,
                           );
 
-                          Widget leadingWidget;
-                          if (downloadedVideo != null) {
-                            leadingWidget = Image.file(File(downloadedVideo.localThumbnailPath), width: 100, fit: BoxFit.cover);
-                          } else {
-                            leadingWidget = Image.network(video.thumbnailUrl, width: 100, fit: BoxFit.cover);
-                          }
-
                           return ListTile(
-                            leading: leadingWidget,
+                            leading: Image.network(video.thumbnailUrl, width: 100, fit: BoxFit.cover),
                             title: Text(video.title),
                             subtitle: Text(video.channelTitle),
                             trailing: Row(
@@ -110,6 +95,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                                     await playlistService.removeVideoFromPlaylist(
                                         _currentPlaylist.name, video.videoId);
 
+                                    // Comprobación de seguridad
                                     if (!context.mounted) return;
 
                                     setState(() {

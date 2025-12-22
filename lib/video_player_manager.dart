@@ -1,4 +1,3 @@
-
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
@@ -7,7 +6,6 @@ import 'package:myapp/models/video_history.dart';
 import 'package:myapp/services/history_service.dart';
 import 'package:video_player/video_player.dart';
 
-// Centraliza el manejo del estado del reproductor y el ciclo de vida de la app.
 class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
   final HistoryService _historyService = HistoryService();
   final AudioHandler _audioHandler;
@@ -21,19 +19,23 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
   String? _videoTitle;
   String? _videoThumbnailUrl;
   String? _videoChannelTitle;
+  Duration? _videoDuration;
   bool _isLocal = false;
   bool _isInBackground = false;
 
-  // Constructor
+  // Posición centralizada y sincronizada
+  Duration _currentPosition = Duration.zero;
+  StreamSubscription<PlaybackState>? _playbackStateSubscription;
+  VoidCallback? _videoPlayerListener;
+
   VideoPlayerManager(this._audioHandler);
 
-  // Getters
   String? get currentVideoId => _currentVideoId;
   bool get isMinimized => _isMinimized;
   bool get isFullScreen => _isFullScreen;
   bool get isInBackground => _isInBackground;
+  Duration get currentPosition => _currentPosition; // Getter para la posición
 
-  // Inicializador para el observador del ciclo de vida
   void init() {
     WidgetsBinding.instance.addObserver(this);
   }
@@ -41,12 +43,13 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _videoPlayerController?.removeListener(_videoPlayerListener ?? () {});
     _videoPlayerController?.dispose();
+    _playbackStateSubscription?.cancel();
     _audioHandler.stop();
     super.dispose();
   }
 
-  // MÉTODO DE CICLO DE VIDA CENTRALIZADO Y CORREGIDO
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -54,14 +57,12 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
       case AppLifecycleState.detached:
-      case AppLifecycleState.hidden: // Caso añadido para ser exhaustivo
-        // Si hay un video cargado (reproduciendo o pausado), pasa a modo audio.
+      case AppLifecycleState.hidden:
         if (_videoPlayerController != null && !_isInBackground) {
           switchToBackgroundAudio();
         }
         break;
       case AppLifecycleState.resumed:
-        // Si estábamos en modo audio, vuelve al video.
         if (_isInBackground) {
           switchToForegroundVideo();
         }
@@ -75,6 +76,7 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
     required String title,
     required String thumbnailUrl,
     required String channelTitle,
+    Duration? duration,
     bool isLocal = false,
   }) {
     _videoPlayerController = controller;
@@ -82,23 +84,21 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
     _videoTitle = title;
     _videoThumbnailUrl = thumbnailUrl;
     _videoChannelTitle = channelTitle;
+    _videoDuration = duration;
     _isLocal = isLocal;
-  }
 
-  Future<void> play(String videoId, {bool isLocalVideo = false}) async {
-    if (_currentVideoId != null) {
-      await close(); // Cierra completamente el video anterior
-    }
-    _currentVideoId = videoId;
-    _isMinimized = false;
-    _isFullScreen = false;
-    _isInBackground = false;
-    _isLocal = isLocalVideo;
+    // Sincronizar posición desde el reproductor de video
+    _videoPlayerListener = () {
+      if (_videoPlayerController != null && _videoPlayerController!.value.isInitialized) {
+        _currentPosition = _videoPlayerController!.value.position;
+      }
+    };
+    _videoPlayerController!.addListener(_videoPlayerListener!);
 
     if (!_isLocal) {
       _historyService.addVideoToHistory(
         VideoHistory(
-          videoId: videoId,
+          videoId: _currentVideoId!,
           title: _videoTitle ?? '',
           thumbnailUrl: _videoThumbnailUrl ?? '',
           channelTitle: _videoChannelTitle ?? '',
@@ -106,41 +106,62 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
         ),
       );
     }
+  }
+
+  Future<void> play(String videoId, {bool isLocalVideo = false}) async {
+    if (_currentVideoId != null) {
+      await close();
+    }
+    _currentVideoId = videoId;
+    _isMinimized = false;
+    _isFullScreen = false;
+    _isInBackground = false;
+    _isLocal = isLocalVideo;
+    _currentPosition = Duration.zero; // Resetear posición
+
     notifyListeners();
   }
 
   Future<void> switchToBackgroundAudio() async {
-    if (_videoPlayerController == null || _videoStreamUrl == null || !_videoPlayerController!.value.isInitialized) {
-      return;
-    }
+    if (_videoPlayerController == null || !_videoPlayerController!.value.isInitialized) return;
     if (_isInBackground) return;
 
     _isInBackground = true;
-    final position = _videoPlayerController!.value.position;
+    _currentPosition = _videoPlayerController!.value.position;
     await _videoPlayerController!.pause();
 
     final mediaItem = MediaItem(
-      id: _videoStreamUrl!,
+      id: _videoStreamUrl ?? _currentVideoId!,
       title: _videoTitle ?? 'Video sin título',
       artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
       artist: _videoChannelTitle,
+      duration: _videoDuration,
       extras: <String, dynamic>{'isLocal': _isLocal},
     );
 
-    await _audioHandler.addQueueItem(mediaItem);
-    await _audioHandler.seek(position);
-    await _audioHandler.play();
+    await _audioHandler.playMediaItem(mediaItem);
+    await _audioHandler.seek(_currentPosition);
+
+    // Sincronizar posición desde el audio en segundo plano
+    _playbackStateSubscription = _audioHandler.playbackState.listen((playbackState) {
+      _currentPosition = playbackState.updatePosition;
+    });
+
+    notifyListeners();
   }
 
   Future<void> switchToForegroundVideo() async {
     if (!_isInBackground || _videoPlayerController == null) return;
 
-    final backgroundPosition = _audioHandler.playbackState.value.updatePosition;
-    
+    // Cancelar la suscripción al estado del audio
+    await _playbackStateSubscription?.cancel();
+    _playbackStateSubscription = null;
+
     await _audioHandler.stop();
 
     if (_videoPlayerController!.value.isInitialized) {
-      await _videoPlayerController!.seekTo(backgroundPosition);
+      // Usar la posición sincronizada
+      await _videoPlayerController!.seekTo(_currentPosition);
       await _videoPlayerController!.play();
     }
 
@@ -163,7 +184,9 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> close() async {
+    _videoPlayerController?.removeListener(_videoPlayerListener ?? () {});
     await _videoPlayerController?.dispose();
+    await _playbackStateSubscription?.cancel();
     await _audioHandler.stop();
 
     _currentVideoId = null;
@@ -175,7 +198,11 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
     _videoTitle = null;
     _videoThumbnailUrl = null;
     _videoChannelTitle = null;
+    _videoDuration = null;
     _isLocal = false;
+    _currentPosition = Duration.zero;
+    _playbackStateSubscription = null;
+    _videoPlayerListener = null;
 
     notifyListeners();
   }
