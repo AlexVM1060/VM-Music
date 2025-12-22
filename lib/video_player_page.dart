@@ -112,7 +112,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       await _videoPlayerController!.seekTo(startAt);
 
       if (mounted) {
-        _manager.setPlayerData(
+        await _manager.preparePlayer(
           controller: _videoPlayerController!,
           streamUrl: streamInfo.url.toString(),
           title: _videoTitle,

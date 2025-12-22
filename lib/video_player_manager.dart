@@ -30,19 +30,30 @@ class VideoPlayerManager extends ChangeNotifier {
   bool get isMinimized => _isMinimized;
   bool get isFullScreen => _isFullScreen;
 
-  // Función para registrar los datos del reproductor cuando está listo
-  void setPlayerData({
+ Future<void> preparePlayer({
     required VideoPlayerController controller,
     String? streamUrl,
     required String title,
     required String thumbnailUrl,
     required String channelTitle,
-  }) {
+  }) async {
     _videoPlayerController = controller;
     _videoStreamUrl = streamUrl;
     _videoTitle = title;
     _videoThumbnailUrl = thumbnailUrl;
     _videoChannelTitle = channelTitle;
+
+    if (_videoStreamUrl != null && _videoPlayerController != null) {
+      final mediaItem = MediaItem(
+        id: _videoStreamUrl!,
+        title: _videoTitle ?? 'Video sin título',
+        artist: _videoChannelTitle,
+        artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
+        duration: _videoPlayerController!.value.duration,
+      );
+      // Carga el MediaItem en el AudioHandler para que esté listo
+      await _audioHandler.addQueueItem(mediaItem);
+    }
   }
 
   // Función para iniciar la reproducción de un nuevo vídeo
@@ -78,7 +89,6 @@ class VideoPlayerManager extends ChangeNotifier {
   // Cambia a modo de solo audio en segundo plano
   Future<void> switchToBackgroundAudio() async {
     if (_videoPlayerController == null ||
-        _videoStreamUrl == null ||
         !_videoPlayerController!.value.isPlaying) {
       return;
     }
@@ -90,15 +100,6 @@ class VideoPlayerManager extends ChangeNotifier {
     await _videoPlayerController!.pause();
 
     // Inicia el audio en segundo plano con audio_service
-    final mediaItem = MediaItem(
-      id: _videoStreamUrl!,
-      title: _videoTitle ?? 'Video sin título',
-      artist: _videoChannelTitle,
-      artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
-      duration: _videoPlayerController!.value.duration,
-    );
-    // Pasamos el item a la cola y buscamos la posición correcta
-    await _audioHandler.addQueueItem(mediaItem);
     await _audioHandler.seek(position);
     await _audioHandler.play();
 
