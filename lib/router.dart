@@ -12,10 +12,9 @@ final GoRouter router = GoRouter(
       },
       routes: <RouteBase>[
         GoRoute(
-          path: 'playlist/:name',
+          path: 'playlist',
           builder: (context, state) {
-            final playlistName = state.pathParameters['name']!;
-            final playlist = Playlist(name: playlistName, videos: []);
+            final playlist = state.extra as Playlist;
             return PlaylistDetailPage(playlist: playlist);
           },
         ),

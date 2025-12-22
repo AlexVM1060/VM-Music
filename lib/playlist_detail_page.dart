@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:myapp/models/downloaded_video.dart';
 import 'package:myapp/models/playlist.dart';
+import 'package:myapp/offline_video_player_page.dart';
+import 'package:myapp/services/download_service.dart';
 import 'package:myapp/services/playlist_service.dart';
 import 'package:myapp/video_player_manager.dart';
 import 'package:provider/provider.dart';
+import 'package:collection/collection.dart';
 
 class PlaylistDetailPage extends StatefulWidget {
   final Playlist playlist;
@@ -28,46 +32,103 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   @override
   Widget build(BuildContext context) {
     final playlistService = Provider.of<PlaylistService>(context, listen: false);
+    final downloadService = Provider.of<DownloadService>(context);
+    final videoManager = Provider.of<VideoPlayerManager>(context, listen: false);
+    final isAutoDownload = downloadService.isPlaylistAutoDownload(_currentPlaylist.name);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(_currentPlaylist.name),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.download_for_offline),
+            tooltip: 'Descargar todo',
+            onPressed: () {
+              downloadService.downloadPlaylistVideos(_currentPlaylist.videos);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Iniciando descarga de la playlist...')),
+              );
+            },
+          ),
+        ],
       ),
-      body: _currentPlaylist.videos.isEmpty
-          ? const Center(child: Text('Esta playlist no contiene videos.'))
-          : ListView.builder(
-              itemCount: _currentPlaylist.videos.length,
-              itemBuilder: (context, index) {
-                final video = _currentPlaylist.videos[index];
-                return ListTile(
-                  leading: Image.network(video.thumbnailUrl),
-                  title: Text(video.title),
-                  subtitle: Text(video.channelTitle),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
-                    onPressed: () async {
-                      await playlistService.removeVideoFromPlaylist(
-                          _currentPlaylist.name, video.videoId);
+      body: Column(
+        children: [
+          SwitchListTile(
+            title: const Text('Descarga automática'),
+            subtitle: const Text('Los nuevos vídeos se descargarán automáticamente'),
+            value: isAutoDownload,
+            onChanged: (bool value) {
+              downloadService.setPlaylistAutoDownload(_currentPlaylist.name, value);
+            },
+          ),
+          Expanded(
+            child: FutureBuilder<List<DownloadedVideo>>(
+              future: downloadService.getDownloadedVideos(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final downloadedVideos = snapshot.data!;
+                return _currentPlaylist.videos.isEmpty
+                    ? const Center(child: Text('Esta playlist no contiene videos.'))
+                    : ListView.builder(
+                        itemCount: _currentPlaylist.videos.length,
+                        itemBuilder: (context, index) {
+                          final video = _currentPlaylist.videos[index];
+                          final downloadedVideo = downloadedVideos.firstWhereOrNull(
+                            (v) => v.videoId == video.videoId,
+                          );
 
-                      // Comprobación de seguridad
-                      if (!context.mounted) return;
+                          return ListTile(
+                            leading: Image.network(video.thumbnailUrl, width: 100, fit: BoxFit.cover),
+                            title: Text(video.title),
+                            subtitle: Text(video.channelTitle),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (downloadedVideo != null)
+                                  const Icon(Icons.check_circle, color: Colors.green),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.red),
+                                  onPressed: () async {
+                                    await playlistService.removeVideoFromPlaylist(
+                                        _currentPlaylist.name, video.videoId);
 
-                      setState(() {
-                        _currentPlaylist.videos.removeAt(index);
-                      });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text('Video eliminado de la playlist')),
+                                    // Comprobación de seguridad
+                                    if (!context.mounted) return;
+
+                                    setState(() {
+                                      _currentPlaylist.videos.removeAt(index);
+                                    });
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('Video eliminado de la playlist')),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                            onTap: () {
+                              if (downloadedVideo != null) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => OfflineVideoPlayerPage(video: downloadedVideo),
+                                  ),
+                                );
+                              } else {
+                                videoManager.play(video.videoId);
+                              }
+                            },
+                          );
+                        },
                       );
-                    },
-                  ),
-                  onTap: () {
-                    Provider.of<VideoPlayerManager>(context, listen: false)
-                        .play(video.videoId);
-                  },
-                );
               },
             ),
+          ),
+        ],
+      ),
     );
   }
 }

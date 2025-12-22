@@ -89,7 +89,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                 title: Text(playlist.name),
                 subtitle: Text('${playlist.videos.length} videos'),
                 onTap: () {
-                  context.push('/playlist/${playlist.name}').then((_) => _loadPlaylists());
+                  context.push('/playlist', extra: playlist).then((_) => _loadPlaylists());
                 },
               );
             },
