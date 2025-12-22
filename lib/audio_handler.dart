@@ -1,5 +1,6 @@
+import 'dart:io';
 import 'package:audio_service/audio_service.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:video_player/video_player.dart';
 
 Future<AudioHandler> initAudioService() async {
   return await AudioService.init(
@@ -14,97 +15,68 @@ Future<AudioHandler> initAudioService() async {
 }
 
 class MyAudioHandler extends BaseAudioHandler {
-  final _player = AudioPlayer();
-
-  MyAudioHandler() {
-    _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
-    _listenForCurrentSongIndexChanges();
-  }
-
-  void _listenForCurrentSongIndexChanges() {
-    _player.currentIndexStream.listen((index) {
-      if (index != null && mediaItem.value != null) {
-        mediaItem.add(mediaItem.value);
-      }
-    });
-  }
+  VideoPlayerController? _controller;
+  VideoPlayerController? get videoPlayerController => _controller;
 
   @override
-  Future<void> play() => _player.play();
-
-  @override
-  Future<void> pause() => _player.pause();
-
-  @override
-  Future<void> seek(Duration position) => _player.seek(position);
-
-  @override
-  Future<void> stop() => _player.stop();
-
-  @override
-  Future<void> addQueueItem(MediaItem mediaItem) async {
-    final audioSource = _createAudioSource(mediaItem);
-    await _player.setAudioSource(audioSource);
-    this.mediaItem.add(mediaItem);
-  }
-
-  @override
-  Future<void> updateQueue(List<MediaItem> queue) async {
-    final audioSources = queue.map(_createAudioSource).toList();
-    if (audioSources.isNotEmpty) {
-      await _player.setAudioSource(ConcatenatingAudioSource(children: audioSources));
-      this.queue.add(queue);
-      if (queue.isNotEmpty) {
-        mediaItem.add(queue.first);
-      }
+  Future<void> play() async {
+    if (_controller != null) {
+      await _controller!.play();
+      playbackState.add(playbackState.value.copyWith(playing: true));
     }
   }
 
-  AudioSource _createAudioSource(MediaItem mediaItem) {
-    // Support for online and offline playback
-    if (mediaItem.extras?['isLocal'] == true) {
-      return AudioSource.file(mediaItem.id, tag: mediaItem);
+  @override
+  Future<void> pause() async {
+    if (_controller != null) {
+      await _controller!.pause();
+      playbackState.add(playbackState.value.copyWith(playing: false));
+    }
+  }
+
+  @override
+  Future<void> seek(Duration position) async {
+    if (_controller != null) {
+      await _controller!.seekTo(position);
+    }
+  }
+
+  @override
+  Future<void> stop() async {
+    if (_controller != null) {
+      await _controller!.pause();
+      await _controller!.seekTo(Duration.zero);
+      playbackState.add(playbackState.value.copyWith(playing: false));
+    }
+  }
+
+  Future<void> setVideo(String url, {bool isLocal = false}) async {
+    if (_controller != null) {
+      await _controller!.dispose();
+    }
+    if (isLocal) {
+      _controller = VideoPlayerController.file(File(url));
     } else {
-      return AudioSource.uri(Uri.parse(mediaItem.id), tag: mediaItem);
+      _controller = VideoPlayerController.networkUrl(Uri.parse(url));
     }
-  }
-
-  PlaybackState _transformEvent(PlaybackEvent event) {
-    return PlaybackState(
-      controls: [
-        MediaControl.rewind,
-        if (_player.playing) MediaControl.pause else MediaControl.play,
-        MediaControl.stop,
-        MediaControl.fastForward,
-      ],
-      systemActions: const {
-        MediaAction.seek,
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
-      },
-      androidCompactActionIndices: const [0, 1, 3],
-      processingState: _mapProcessingState(_player.processingState),
-      playing: _player.playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      speed: _player.speed,
-      queueIndex: event.currentIndex,
-      updateTime: DateTime.now(),
+    await _controller!.initialize();
+    mediaItem.add(
+      MediaItem(
+        id: url,
+        title: 'Video',
+        duration: _controller!.value.duration,
+      ),
     );
-  }
-
-  AudioProcessingState _mapProcessingState(ProcessingState processingState) {
-    switch (processingState) {
-      case ProcessingState.idle:
-        return AudioProcessingState.idle;
-      case ProcessingState.loading:
-        return AudioProcessingState.loading;
-      case ProcessingState.buffering:
-        return AudioProcessingState.buffering;
-      case ProcessingState.ready:
-        return AudioProcessingState.ready;
-      case ProcessingState.completed:
-        return AudioProcessingState.completed;
-    }
+    _controller!.addListener(() {
+      playbackState.add(
+        playbackState.value.copyWith(
+          updatePosition: _controller!.value.position,
+          bufferedPosition: _controller!.value.buffered.isNotEmpty 
+              ? _controller!.value.buffered.last.end 
+              : Duration.zero,
+          playing: _controller!.value.isPlaying,
+        ),
+      );
+    });
   }
 }

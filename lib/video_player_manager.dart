@@ -30,6 +30,7 @@ class VideoPlayerManager extends ChangeNotifier with WidgetsBindingObserver {
 
   VideoPlayerManager(this._audioHandler);
 
+  AudioHandler get audioHandler => _audioHandler;
   String? get currentVideoId => _currentVideoId;
   bool get isMinimized => _isMinimized;
   bool get isFullScreen => _isFullScreen;

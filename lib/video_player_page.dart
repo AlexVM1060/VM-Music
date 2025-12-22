@@ -5,12 +5,12 @@ import 'package:audio_service/audio_service.dart';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:myapp/audio_handler.dart';
 import 'package:myapp/models/video_history.dart';
 import 'package:myapp/services/download_service.dart';
 import 'package:myapp/services/playlist_service.dart';
 import 'package:myapp/video_player_manager.dart';
 import 'package:provider/provider.dart';
-import 'package:video_player/video_player.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 class VideoPlayerPage extends StatefulWidget {
@@ -23,7 +23,6 @@ class VideoPlayerPage extends StatefulWidget {
 }
 
 class _VideoPlayerPageState extends State<VideoPlayerPage> {
-  VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
   final _ytExplode = YoutubeExplode();
   List<Video> _relatedVideos = [];
@@ -33,6 +32,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   bool _isLoading = true;
 
   late final VideoPlayerManager _manager;
+  late final MyAudioHandler _audioHandler;
 
   List<MuxedStreamInfo> _muxedStreamInfos = [];
   MuxedStreamInfo? _selectedStreamInfo;
@@ -41,6 +41,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void initState() {
     super.initState();
     _manager = Provider.of<VideoPlayerManager>(context, listen: false);
+    _audioHandler = _manager.audioHandler as MyAudioHandler;
     _manager.close();
     _manager.init();
     _initializePlayer();
@@ -100,24 +101,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     });
 
     try {
-      await _disposeControllers();
+      await _audioHandler.setVideo(streamInfo.url.toString());
+      final videoPlayerController = _audioHandler.videoPlayerController;
 
-      _videoPlayerController = VideoPlayerController.networkUrl(streamInfo.url);
-      await _videoPlayerController!.initialize();
-      await _videoPlayerController!.seekTo(startAt);
-
-      if (mounted) {
-        _manager.setPlayerData(
-          controller: _videoPlayerController!,
-          streamUrl: streamInfo.url.toString(),
-          title: _videoTitle,
-          thumbnailUrl: _video!.thumbnails.mediumResUrl,
-          channelTitle: _video!.author,
-          duration: _video!.duration, // Se pasa la duración del video
-        );
-
+      if (videoPlayerController != null) {
+         await videoPlayerController.seekTo(startAt);
         _chewieController = ChewieController(
-          videoPlayerController: _videoPlayerController!,
+          videoPlayerController: videoPlayerController,
           autoPlay: true,
           looping: false,
           aspectRatio: 16 / 9,
@@ -149,9 +139,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     if (_selectedStreamInfo?.videoQuality == newStreamInfo.videoQuality) {
       return;
     }
-
-    final currentPosition =
-        _videoPlayerController?.value.position ?? Duration.zero;
+    final currentPosition = _audioHandler.videoPlayerController?.value.position ?? Duration.zero;
     await _buildPlayerWithStream(newStreamInfo, startAt: currentPosition);
   }
 
@@ -208,19 +196,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
   void didUpdateWidget(covariant VideoPlayerPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.videoId != widget.videoId) {
-      _disposeControllers();
+      _chewieController?.dispose();
       _initializePlayer();
     }
   }
 
-  Future<void> _disposeControllers() async {
-    await _videoPlayerController?.dispose();
-    _chewieController?.dispose();
-  }
-
   @override
   void dispose() {
-    _disposeControllers();
+    _chewieController?.dispose();
     _ytExplode.close();
     super.dispose();
   }
@@ -232,9 +215,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     const double minimizedWidth = 250.0;
     const double minimizedHeight = 140.6;
 
-    final playerWidget =
-        _chewieController != null &&
-            _chewieController!.videoPlayerController.value.isInitialized
+    final playerWidget = _chewieController != null && _audioHandler.videoPlayerController != null && _audioHandler.videoPlayerController!.value.isInitialized
         ? Chewie(controller: _chewieController!)
         : const Center(child: CupertinoActivityIndicator());
 
@@ -403,7 +384,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
              Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: StreamBuilder<PlaybackState>(
-                stream: AudioService.playbackStateStream,
+                stream: _audioHandler.playbackState,
                 builder: (context, snapshot) {
                   final playbackState = snapshot.data;
                   final position = playbackState?.updatePosition ?? Duration.zero;
