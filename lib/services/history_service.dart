@@ -1,4 +1,3 @@
-
 import 'package:hive/hive.dart';
 import 'package:myapp/models/video_history.dart';
 
@@ -10,17 +9,31 @@ class HistoryService {
 
   Future<void> addVideoToHistory(VideoHistory video) async {
     final box = await _box;
-    // Remove if already exists to avoid duplicates and update watchedAt
-    final existing = box.values.firstWhere((v) => v.videoId == video.videoId, orElse: () => null as VideoHistory);
-    if (existing != null) {
-      await existing.delete();
+    
+    // Busca la clave del video existente, si hay alguno
+    dynamic keyToDelete;
+    for (var entry in box.toMap().entries) {
+      if (entry.value.videoId == video.videoId) {
+        keyToDelete = entry.key;
+        break;
+      }
     }
+
+    // Si el video existe, bórralo primero
+    if (keyToDelete != null) {
+      await box.delete(keyToDelete);
+    }
+
+    // Añade la nueva entrada de vídeo. Esto actualiza efectivamente la marca de tiempo 'watchedAt'
     await box.add(video);
   }
 
   Future<List<VideoHistory>> getHistory() async {
     final box = await _box;
-    return box.values.toList().reversed.toList();
+    // Ordena por fecha de visualización, del más reciente al más antiguo
+    final history = box.values.toList();
+    history.sort((a, b) => b.watchedAt.compareTo(a.watchedAt));
+    return history;
   }
 
   Future<void> clearHistory() async {
