@@ -113,12 +113,14 @@ class VideoPlayerManager extends ChangeNotifier {
     // Obtiene la posición actual del audio en segundo plano
     final backgroundPosition = _audioHandler.playbackState.value.updatePosition;
 
-    // Detiene el audio en segundo plano
-    await _audioHandler.stop();
+    // Pausa el audio en segundo plano
+    await _audioHandler.pause();
 
     // Reanuda el vídeo desde la posición correcta
-    await _videoPlayerController!.seekTo(backgroundPosition);
-    await _videoPlayerController!.play();
+    if (_videoPlayerController?.value.isInitialized ?? false) {
+      await _videoPlayerController!.seekTo(backgroundPosition);
+      await _videoPlayerController!.play();
+    }
 
     _isInBackground = false;
   }
