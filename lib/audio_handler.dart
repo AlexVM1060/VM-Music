@@ -19,8 +19,8 @@ class MyAudioHandler extends BaseAudioHandler {
   MyAudioHandler() {
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
   }
-  
-    @override
+
+  @override
   Future<void> play() => _player.play();
 
   @override
@@ -41,29 +41,38 @@ class MyAudioHandler extends BaseAudioHandler {
     await _player.setAudioSource(AudioSource.uri(Uri.parse(mediaItem.id)));
   }
 
-  PlaybackState _transformEvent(PlaybackEvent event) {
-  return PlaybackState(
-    controls: [
-      MediaControl.rewind,
-      if (_player.playing) MediaControl.pause else MediaControl.play,
-      MediaControl.stop,
-      MediaControl.fastForward,
-    ],
-    systemActions: const {
-      MediaAction.seek,
-      MediaAction.seekForward,
-      MediaAction.seekBackward,
-    },
-    androidCompactActionIndices: const [0, 1, 3],
-    processingState: _mapProcessingState(_player.processingState),
-    playing: _player.playing,
-    updatePosition: _player.position,
-    bufferedPosition: _player.bufferedPosition,
-    speed: _player.speed,
-    queueIndex: event.currentIndex,
-  );
-}
+  @override
+  Future<dynamic> customAction(String name, [Map<String, dynamic>? extras]) async {
+    if (name == 'setVolume') {
+      final volume = extras?['volume'] as double;
+      await _player.setVolume(volume);
+      return true;
+    }
+    return super.customAction(name, extras);
+  }
 
+  PlaybackState _transformEvent(PlaybackEvent event) {
+    return PlaybackState(
+      controls: [
+        MediaControl.rewind,
+        if (_player.playing) MediaControl.pause else MediaControl.play,
+        MediaControl.stop,
+        MediaControl.fastForward,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+      },
+      androidCompactActionIndices: const [0, 1, 3],
+      processingState: _mapProcessingState(_player.processingState),
+      playing: _player.playing,
+      updatePosition: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      speed: _player.speed,
+      queueIndex: event.currentIndex,
+    );
+  }
 
   AudioProcessingState _mapProcessingState(ProcessingState processingState) {
     switch (processingState) {

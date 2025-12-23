@@ -30,7 +30,7 @@ class VideoPlayerManager extends ChangeNotifier {
   bool get isMinimized => _isMinimized;
   bool get isFullScreen => _isFullScreen;
 
- Future<void> preparePlayer({
+  Future<void> preparePlayer({
     required VideoPlayerController controller,
     String? streamUrl,
     required String title,
@@ -51,8 +51,9 @@ class VideoPlayerManager extends ChangeNotifier {
         artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
         duration: _videoPlayerController!.value.duration,
       );
-      // Carga el MediaItem en el AudioHandler para que esté listo
       await _audioHandler.addQueueItem(mediaItem);
+      await _audioHandler.play();
+      await _audioHandler.customAction('setVolume', {'volume': 0.0});
     }
   }
 
@@ -69,18 +70,18 @@ class VideoPlayerManager extends ChangeNotifier {
     // Save to history
     final yt = YoutubeExplode();
     try {
-        final video = await yt.videos.get(videoId);
-        _historyService.addVideoToHistory(
+      final video = await yt.videos.get(videoId);
+      _historyService.addVideoToHistory(
         VideoHistory(
-            videoId: video.id.value,
-            title: video.title,
-            thumbnailUrl: video.thumbnails.mediumResUrl,
-            channelTitle: video.author,
-            watchedAt: DateTime.now(),
+          videoId: video.id.value,
+          title: video.title,
+          thumbnailUrl: video.thumbnails.mediumResUrl,
+          channelTitle: video.author,
+          watchedAt: DateTime.now(),
         ),
-        );
+      );
     } finally {
-        yt.close();
+      yt.close();
     }
 
     notifyListeners();
@@ -88,21 +89,10 @@ class VideoPlayerManager extends ChangeNotifier {
 
   // Cambia a modo de solo audio en segundo plano
   Future<void> switchToBackgroundAudio() async {
-    if (_videoPlayerController == null ||
-        !_videoPlayerController!.value.isPlaying) {
-      return;
-    }
+    if (_videoPlayerController == null) return;
 
-    final position = await _videoPlayerController!.position;
-    if (position == null) return;
-
-    // Pausa el vídeo
     await _videoPlayerController!.pause();
-
-    // Inicia el audio en segundo plano con audio_service
-    await _audioHandler.seek(position);
-    await _audioHandler.play();
-
+    await _audioHandler.customAction('setVolume', {'volume': 1.0});
     _isInBackground = true;
   }
 
@@ -110,13 +100,9 @@ class VideoPlayerManager extends ChangeNotifier {
   Future<void> switchToForegroundVideo() async {
     if (!_isInBackground || _videoPlayerController == null) return;
 
-    // Obtiene la posición actual del audio en segundo plano
     final backgroundPosition = _audioHandler.playbackState.value.updatePosition;
+    await _audioHandler.customAction('setVolume', {'volume': 0.0});
 
-    // Pausa el audio en segundo plano
-    await _audioHandler.pause();
-
-    // Reanuda el vídeo desde la posición correcta
     if (_videoPlayerController?.value.isInitialized ?? false) {
       await _videoPlayerController!.seekTo(backgroundPosition);
       await _videoPlayerController!.play();
@@ -143,7 +129,7 @@ class VideoPlayerManager extends ChangeNotifier {
 
   // Función para cerrar el reproductor
   void close() {
-    _videoPlayerController?.pause();
+    _videoPlayerController?.dispose();
     _audioHandler.stop();
 
     _currentVideoId = null;
