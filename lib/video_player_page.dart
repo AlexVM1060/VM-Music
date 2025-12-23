@@ -49,7 +49,9 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     super.didChangeAppLifecycleState(state);
 
     if (state == AppLifecycleState.paused) {
-      _manager.switchToBackgroundAudio();
+      if (_manager.videoPlayerController?.value.isPlaying ?? false) {
+         _manager.switchToBackgroundAudio();
+      }
     } else if (state == AppLifecycleState.resumed) {
       _manager.switchToForegroundVideo();
     }
@@ -226,6 +228,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     WidgetsBinding.instance.removeObserver(this);
     _disposeControllers();
     _ytExplode.close();
+    _manager.dispose();
     super.dispose();
   }
 
@@ -244,8 +247,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       );
     }
 
-    if (_chewieController == null) {
-      return const SizedBox.shrink();
+    if (_chewieController == null || !_chewieController!.videoPlayerController.value.isInitialized) {
+       return const Scaffold(
+        body: Center(
+          child: CupertinoActivityIndicator(),
+        ),
+      );
     }
 
     final playerWidget = Chewie(controller: _chewieController!);
@@ -453,7 +460,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
             right: 0,
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
-              onPressed: () => _manager.close(),
+              onPressed: () async => await _manager.close(),
               child:
                   const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
             ),

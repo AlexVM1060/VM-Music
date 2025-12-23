@@ -10,6 +10,7 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 class VideoPlayerManager extends ChangeNotifier {
   final HistoryService _historyService = HistoryService();
   final AudioHandler _audioHandler;
+  final YoutubeExplode _ytExplode = YoutubeExplode();
 
   String? _currentVideoId;
   VideoPlayerController? _videoPlayerController;
@@ -52,9 +53,8 @@ class VideoPlayerManager extends ChangeNotifier {
     _isFullScreen = false;
     _isInBackground = false;
 
-    final yt = YoutubeExplode();
     try {
-      final video = await yt.videos.get(videoId);
+      final video = await _ytExplode.videos.get(videoId);
       _historyService.addVideoToHistory(
         VideoHistory(
           videoId: video.id.value,
@@ -64,34 +64,43 @@ class VideoPlayerManager extends ChangeNotifier {
           watchedAt: DateTime.now(),
         ),
       );
-    } finally {
-      yt.close();
+    } catch (e) {
+      print("Error getting video for history: $e");
     }
 
     notifyListeners();
   }
 
   Future<void> switchToBackgroundAudio() async {
-    if (_videoPlayerController == null || _videoStreamUrl == null) return;
+    if (_videoPlayerController == null ||
+        !_videoPlayerController!.value.isInitialized ||
+        _currentVideoId == null) {
+      return;
+    }
 
-    final position = await _videoPlayerController!.position;
-    if (position == null) return;
-
+    final position = _videoPlayerController!.value.position;
     await _videoPlayerController!.pause();
 
-    final mediaItem = MediaItem(
-      id: _videoStreamUrl!,
-      title: _videoTitle ?? 'Video sin título',
-      artist: _videoChannelTitle,
-      artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
-      duration: _videoPlayerController!.value.duration,
-    );
+    try {
+      final manifest = await _ytExplode.videos.streamsClient.getManifest(_currentVideoId!);
+      final audioUrl = manifest.audioOnly.sortByBitrate().last.url;
 
-    await _audioHandler.addQueueItem(mediaItem);
-    await _audioHandler.seek(position);
-    await _audioHandler.play();
+      final mediaItem = MediaItem(
+        id: audioUrl.toString(),
+        title: _videoTitle ?? 'Video sin título',
+        artist: _videoChannelTitle,
+        artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
+        duration: _videoPlayerController!.value.duration,
+      );
 
-    _isInBackground = true;
+      await _audioHandler.addQueueItem(mediaItem);
+      await _audioHandler.seek(position);
+      await _audioHandler.play();
+
+      _isInBackground = true;
+    } catch (e) {
+      print('Failed to switch to background audio: $e');
+    }
   }
 
   Future<void> switchToForegroundVideo() async {
@@ -144,7 +153,7 @@ class VideoPlayerManager extends ChangeNotifier {
 
   @override
   void dispose() {
-    close();
+    _ytExplode.close();
     super.dispose();
   }
 }
