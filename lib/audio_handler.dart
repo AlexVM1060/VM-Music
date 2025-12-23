@@ -32,23 +32,18 @@ class MyAudioHandler extends BaseAudioHandler {
   @override
   Future<void> stop() async {
     await _player.stop();
-    return super.stop();
+    await playbackState.firstWhere((state) => state.processingState == AudioProcessingState.idle);
   }
 
   @override
   Future<void> addQueueItem(MediaItem mediaItem) async {
     this.mediaItem.add(mediaItem);
-    await _player.setAudioSource(AudioSource.uri(Uri.parse(mediaItem.id)));
-  }
-
-  @override
-  Future<dynamic> customAction(String name, [Map<String, dynamic>? extras]) async {
-    if (name == 'setVolume') {
-      final volume = extras?['volume'] as double;
-      await _player.setVolume(volume);
-      return true;
+    try {
+      await _player.setAudioSource(AudioSource.uri(Uri.parse(mediaItem.id)));
+    } catch (e) {
+      // Manejar error de carga
+      print("Error setting audio source: $e");
     }
-    return super.customAction(name, extras);
   }
 
   PlaybackState _transformEvent(PlaybackEvent event) {
@@ -86,6 +81,8 @@ class MyAudioHandler extends BaseAudioHandler {
         return AudioProcessingState.ready;
       case ProcessingState.completed:
         return AudioProcessingState.completed;
+      default:
+        return AudioProcessingState.idle;
     }
   }
 }

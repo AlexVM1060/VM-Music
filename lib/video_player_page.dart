@@ -112,7 +112,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       await _videoPlayerController!.seekTo(startAt);
 
       if (mounted) {
-        await _manager.preparePlayer(
+        _manager.setVideoData(
           controller: _videoPlayerController!,
           streamUrl: streamInfo.url.toString(),
           title: _videoTitle,
@@ -453,7 +453,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
             right: 0,
             child: CupertinoButton(
               padding: const EdgeInsets.all(4),
-              onPressed: _manager.close,
+              onPressed: () => _manager.close(),
               child:
                   const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
             ),
