@@ -8,7 +8,7 @@ Future<AudioHandler> initAudioService() async {
       androidNotificationChannelId: 'com.mycompany.myapp.audio',
       androidNotificationChannelName: 'Audio Service',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
+      androidStopForegroundOnPause: false, // <-- ¡LA CLAVE ESTÁ AQUÍ!
     ),
   );
 }
