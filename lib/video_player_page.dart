@@ -49,11 +49,13 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     super.didChangeAppLifecycleState(state);
 
     if (state == AppLifecycleState.paused) {
-      if (_manager.videoPlayerController?.value.isPlaying ?? false) {
+      if ((_manager.videoPlayerController?.value.isPlaying ?? false) && mounted) {
          _manager.switchToBackgroundAudio();
       }
     } else if (state == AppLifecycleState.resumed) {
-      _manager.switchToForegroundVideo();
+       if(mounted){
+        _manager.switchToForegroundVideo();
+       }
     }
   }
 
@@ -116,10 +118,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       if (mounted) {
         _manager.setVideoData(
           controller: _videoPlayerController!,
-          streamUrl: streamInfo.url.toString(),
           title: _videoTitle,
           thumbnailUrl: _video!.thumbnails.mediumResUrl,
           channelTitle: _video!.author,
+          duration: _video!.duration ?? Duration.zero,
         );
 
         _chewieController = ChewieController(

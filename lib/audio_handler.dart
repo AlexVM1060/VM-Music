@@ -32,17 +32,35 @@ class MyAudioHandler extends BaseAudioHandler {
   @override
   Future<void> stop() async {
     await _player.stop();
-    await playbackState.firstWhere((state) => state.processingState == AudioProcessingState.idle);
+    mediaItem.add(null);
+    await playbackState.firstWhere(
+        (state) => state.processingState == AudioProcessingState.idle);
   }
 
   @override
-  Future<void> addQueueItem(MediaItem mediaItem) async {
-    this.mediaItem.add(mediaItem);
-    try {
-      await _player.setAudioSource(AudioSource.uri(Uri.parse(mediaItem.id)));
-    } catch (e) {
-      // Manejar error de carga
-      print("Error setting audio source: $e");
+  Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
+    if (name == 'prepareAndPlay') {
+      final extrasMap = extras ?? {};
+      final mediaItem = MediaItem(
+        id: extrasMap['id'] as String,
+        title: extrasMap['title'] as String,
+        artist: extrasMap['artist'] as String?,
+        artUri: extrasMap['artUri'] != null ? Uri.parse(extrasMap['artUri']) : null,
+        duration: extrasMap['duration'] != null ? Duration(milliseconds: extrasMap['duration']) : null,
+      );
+      final position = Duration(milliseconds: extrasMap['position'] ?? 0);
+
+      this.mediaItem.add(mediaItem);
+      
+      try {
+        await _player.setAudioSource(AudioSource.uri(Uri.parse(mediaItem.id)));
+        if (_player.processingState != ProcessingState.idle) {
+          await _player.seek(position);
+          await _player.play();
+        }
+      } catch (e) {
+        print("Error in prepareAndPlay: $e");
+      }
     }
   }
 

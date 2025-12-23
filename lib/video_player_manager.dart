@@ -14,10 +14,12 @@ class VideoPlayerManager extends ChangeNotifier {
 
   String? _currentVideoId;
   VideoPlayerController? _videoPlayerController;
-  String? _videoStreamUrl;
+
+  // Datos del video para la transferencia
   String? _videoTitle;
   String? _videoThumbnailUrl;
   String? _videoChannelTitle;
+  Duration? _videoDuration;
 
   bool _isMinimized = false;
   bool _isFullScreen = false;
@@ -32,16 +34,16 @@ class VideoPlayerManager extends ChangeNotifier {
 
   void setVideoData({
     required VideoPlayerController controller,
-    required String streamUrl,
     required String title,
     required String thumbnailUrl,
     required String channelTitle,
+    required Duration duration,
   }) {
     _videoPlayerController = controller;
-    _videoStreamUrl = streamUrl;
     _videoTitle = title;
     _videoThumbnailUrl = thumbnailUrl;
     _videoChannelTitle = channelTitle;
+    _videoDuration = duration;
   }
 
   Future<void> play(String videoId) async {
@@ -85,21 +87,23 @@ class VideoPlayerManager extends ChangeNotifier {
       final manifest = await _ytExplode.videos.streamsClient.getManifest(_currentVideoId!);
       final audioUrl = manifest.audioOnly.sortByBitrate().last.url;
 
-      final mediaItem = MediaItem(
-        id: audioUrl.toString(),
-        title: _videoTitle ?? 'Video sin título',
-        artist: _videoChannelTitle,
-        artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
-        duration: _videoPlayerController!.value.duration,
-      );
-
-      await _audioHandler.addQueueItem(mediaItem);
-      await _audioHandler.seek(position);
-      await _audioHandler.play();
+      // Comando atómico para preparar y reproducir
+      await _audioHandler.customAction('prepareAndPlay', {
+        'id': audioUrl.toString(),
+        'title': _videoTitle ?? 'Video sin título',
+        'artist': _videoChannelTitle,
+        'artUri': _videoThumbnailUrl,
+        'duration': _videoDuration?.inMilliseconds,
+        'position': position.inMilliseconds,
+      });
 
       _isInBackground = true;
     } catch (e) {
       print('Failed to switch to background audio: $e');
+       // Si falla, reanuda el vídeo para no dejar al usuario en silencio
+      if (_videoPlayerController != null && mounted) {
+        await _videoPlayerController!.play();
+      }
     }
   }
 
@@ -151,9 +155,15 @@ class VideoPlayerManager extends ChangeNotifier {
     }
   }
 
+  // Helper para saber si el manager sigue en uso
+  bool _mounted = true;
+  bool get mounted => _mounted;
+
   @override
   void dispose() {
+    _mounted = false;
     _ytExplode.close();
+    close(); // Asegurarse de limpiar todo
     super.dispose();
   }
 }
