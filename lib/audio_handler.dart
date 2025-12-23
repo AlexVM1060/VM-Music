@@ -4,11 +4,11 @@ import 'package:just_audio/just_audio.dart';
 Future<AudioHandler> initAudioService() async {
   return await AudioService.init(
     builder: () => MyAudioHandler(),
-    config: const AudioServiceConfig(
+    config: AudioServiceConfig( // <-- PALABRA CLAVE 'CONST' ELIMINADA
       androidNotificationChannelId: 'com.mycompany.myapp.audio',
       androidNotificationChannelName: 'Audio Service',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: false, // <-- ¡LA CLAVE ESTÁ AQUÍ!
+      androidStopForegroundOnPause: false,
     ),
   );
 }
