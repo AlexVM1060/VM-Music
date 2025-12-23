@@ -13,48 +13,29 @@ class VideoPlayerManager extends ChangeNotifier {
   final YoutubeExplode _ytExplode = YoutubeExplode();
 
   String? _currentVideoId;
-  VideoPlayerController? _videoPlayerController;
-
-  // Datos del video para la transferencia
-  String? _videoTitle;
-  String? _videoThumbnailUrl;
-  String? _videoChannelTitle;
-  Duration? _videoDuration;
-
   bool _isMinimized = false;
   bool _isFullScreen = false;
   bool _isInBackground = false;
+
+  // El manager YA NO es dueño del VideoPlayerController
 
   VideoPlayerManager(this._audioHandler);
 
   String? get currentVideoId => _currentVideoId;
   bool get isMinimized => _isMinimized;
   bool get isFullScreen => _isFullScreen;
-  VideoPlayerController? get videoPlayerController => _videoPlayerController;
-
-  void setVideoData({
-    required VideoPlayerController controller,
-    required String title,
-    required String thumbnailUrl,
-    required String channelTitle,
-    required Duration duration,
-  }) {
-    _videoPlayerController = controller;
-    _videoTitle = title;
-    _videoThumbnailUrl = thumbnailUrl;
-    _videoChannelTitle = channelTitle;
-    _videoDuration = duration;
-  }
 
   Future<void> play(String videoId) async {
-    if (_currentVideoId != null) {
-      await close();
-    }
+    // 1. Notifica que se está reproduciendo un nuevo vídeo
     _currentVideoId = videoId;
     _isMinimized = false;
     _isFullScreen = false;
     _isInBackground = false;
 
+    // 2. Detiene cualquier audio de fondo que pudiera estar sonando de un vídeo anterior
+    await _audioHandler.stop();
+
+    // 3. Añade al historial
     try {
       final video = await _ytExplode.videos.get(videoId);
       _historyService.addVideoToHistory(
@@ -67,56 +48,51 @@ class VideoPlayerManager extends ChangeNotifier {
         ),
       );
     } catch (e) {
-      print("Error getting video for history: $e");
+      // No hacer nada si falla
     }
 
     notifyListeners();
   }
 
-  Future<void> switchToBackgroundAudio() async {
-    if (_videoPlayerController == null ||
-        !_videoPlayerController!.value.isInitialized ||
-        _currentVideoId == null) {
+  Future<void> switchToBackgroundAudio(VideoPlayerController videoController, Video video) async {
+    if (!videoController.value.isInitialized || _currentVideoId == null) {
       return;
     }
 
-    final position = _videoPlayerController!.value.position;
-    await _videoPlayerController!.pause();
+    final position = videoController.value.position;
+    await videoController.pause();
 
     try {
       final manifest = await _ytExplode.videos.streamsClient.getManifest(_currentVideoId!);
       final audioUrl = manifest.audioOnly.sortByBitrate().last.url;
 
-      // Comando atómico para preparar y reproducir
-      await _audioHandler.customAction('prepareAndPlay', {
-        'id': audioUrl.toString(),
-        'title': _videoTitle ?? 'Video sin título',
-        'artist': _videoChannelTitle,
-        'artUri': _videoThumbnailUrl,
-        'duration': _videoDuration?.inMilliseconds,
-        'position': position.inMilliseconds,
+      await _audioHandler.customAction('setSource', {
+        'url': audioUrl.toString(),
+        'title': video.title,
+        'artist': video.author,
+        'artUri': video.thumbnails.mediumResUrl,
+        'duration': video.duration?.inMilliseconds ?? 0,
       });
+
+      await _audioHandler.seek(position);
+      await _audioHandler.play();
 
       _isInBackground = true;
     } catch (e) {
-      print('Failed to switch to background audio: $e');
-       // Si falla, reanuda el vídeo para no dejar al usuario en silencio
-      if (_videoPlayerController != null && mounted) {
-        await _videoPlayerController!.play();
-      }
+      // Si algo falla, reanuda el vídeo
+       await videoController.play();
     }
   }
 
-  Future<void> switchToForegroundVideo() async {
-    if (!_isInBackground || _videoPlayerController == null) return;
+  Future<void> switchToForegroundVideo(VideoPlayerController videoController) async {
+    if (!_isInBackground) return;
 
     final backgroundPosition = _audioHandler.playbackState.value.updatePosition;
+    await _audioHandler.pause();
 
-    await _audioHandler.stop();
-
-    if (_videoPlayerController?.value.isInitialized ?? false) {
-      await _videoPlayerController!.seekTo(backgroundPosition);
-      await _videoPlayerController!.play();
+    if (videoController.value.isInitialized) {
+      await videoController.seekTo(backgroundPosition);
+      await videoController.play();
     }
 
     _isInBackground = false;
@@ -137,13 +113,14 @@ class VideoPlayerManager extends ChangeNotifier {
   }
 
   Future<void> close() async {
-    await _videoPlayerController?.pause();
-    await _audioHandler.stop();
-
+    // LIMPIEZA TOTAL del manager
     _currentVideoId = null;
     _isMinimized = false;
     _isFullScreen = false;
     _isInBackground = false;
+    
+    // El manager ordena al AudioHandler que se detenga y libere todo
+    await _audioHandler.stop();
 
     notifyListeners();
   }
@@ -155,15 +132,10 @@ class VideoPlayerManager extends ChangeNotifier {
     }
   }
 
-  // Helper para saber si el manager sigue en uso
-  bool _mounted = true;
-  bool get mounted => _mounted;
-
   @override
   void dispose() {
-    _mounted = false;
     _ytExplode.close();
-    close(); // Asegurarse de limpiar todo
+    close();
     super.dispose();
   }
 }

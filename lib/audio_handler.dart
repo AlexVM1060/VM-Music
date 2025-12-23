@@ -33,33 +33,26 @@ class MyAudioHandler extends BaseAudioHandler {
   Future<void> stop() async {
     await _player.stop();
     mediaItem.add(null);
-    await playbackState.firstWhere(
-        (state) => state.processingState == AudioProcessingState.idle);
   }
 
   @override
   Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
-    if (name == 'prepareAndPlay') {
-      final extrasMap = extras ?? {};
+    if (name == 'setSource') {
+      extras ??= {};
       final mediaItem = MediaItem(
-        id: extrasMap['id'] as String,
-        title: extrasMap['title'] as String,
-        artist: extrasMap['artist'] as String?,
-        artUri: extrasMap['artUri'] != null ? Uri.parse(extrasMap['artUri']) : null,
-        duration: extrasMap['duration'] != null ? Duration(milliseconds: extrasMap['duration']) : null,
+        id: extras['url'] ?? '',
+        title: extras['title'] ?? 'Video sin título',
+        artist: extras['artist'],
+        artUri: extras['artUri'] != null ? Uri.parse(extras['artUri']) : null,
+        duration: Duration(milliseconds: extras['duration'] ?? 0),
       );
-      final position = Duration(milliseconds: extrasMap['position'] ?? 0);
-
       this.mediaItem.add(mediaItem);
-      
       try {
-        await _player.setAudioSource(AudioSource.uri(Uri.parse(mediaItem.id)));
-        if (_player.processingState != ProcessingState.idle) {
-          await _player.seek(position);
-          await _player.play();
+        if (extras['url'] != null) {
+          await _player.setUrl(extras['url']);
         }
       } catch (e) {
-        print("Error in prepareAndPlay: $e");
+        // Manejar error
       }
     }
   }
@@ -99,8 +92,6 @@ class MyAudioHandler extends BaseAudioHandler {
         return AudioProcessingState.ready;
       case ProcessingState.completed:
         return AudioProcessingState.completed;
-      default:
-        return AudioProcessingState.idle;
     }
   }
 }

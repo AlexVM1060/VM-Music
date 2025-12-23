@@ -22,8 +22,10 @@ class VideoPlayerPage extends StatefulWidget {
 }
 
 class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingObserver {
+  // La página ahora es la ÚNICA dueña de estos controladores
   VideoPlayerController? _videoPlayerController;
   ChewieController? _chewieController;
+  
   final _ytExplode = YoutubeExplode();
   List<Video> _relatedVideos = [];
   String _videoTitle = '';
@@ -41,127 +43,252 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _manager = Provider.of<VideoPlayerManager>(context, listen: false);
-    _initializePlayer();
+    // Se asegura que al iniciar, el manager esté limpio
+    _manager.play(widget.videoId).then((_) => _initializePlayer());
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
+    if (!mounted || _videoPlayerController == null || _video == null) return;
 
     if (state == AppLifecycleState.paused) {
-      if ((_manager.videoPlayerController?.value.isPlaying ?? false) && mounted) {
-         _manager.switchToBackgroundAudio();
+      if (_videoPlayerController!.value.isPlaying) {
+         // La página le PIDE al manager que inicie el audio de fondo
+         _manager.switchToBackgroundAudio(_videoPlayerController!, _video!);
       }
     } else if (state == AppLifecycleState.resumed) {
-       if(mounted){
-        _manager.switchToForegroundVideo();
-       }
+      // La página le PIDE al manager que vuelva al vídeo
+      _manager.switchToForegroundVideo(_videoPlayerController!);
     }
   }
 
   Future<void> _initializePlayer() async {
     if (!mounted) return;
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() { _isLoading = true; });
 
     try {
-      final manifestFuture =
-          _ytExplode.videos.streamsClient.getManifest(widget.videoId);
-      final videoFuture = _ytExplode.videos.get(VideoId(widget.videoId));
+      final manifest = await _ytExplode.videos.streamsClient.getManifest(widget.videoId);
+      _video = await _ytExplode.videos.get(VideoId(widget.videoId));
 
-      final manifest = await manifestFuture;
-      _video = await videoFuture;
-
-      if (mounted) {
-        _videoTitle = _video!.title;
-      }
+      if (mounted) _videoTitle = _video!.title;
 
       _muxedStreamInfos = manifest.muxed.sortByVideoQuality().reversed.toList();
-
-      if (_muxedStreamInfos.isEmpty) {
-        throw Exception('No muxed streams found');
-      }
+      if (_muxedStreamInfos.isEmpty) throw Exception('No se encontraron streams compatibles');
 
       _selectedStreamInfo = _muxedStreamInfos.first;
       await _buildPlayerWithStream(_selectedStreamInfo!);
-
       _fetchRelatedVideos(_video!);
+
     } catch (e) {
-      log('Error initializing player: $e');
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al reproducir el video: $e')),
-        );
+        setState(() { _isLoading = false; });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al reproducir el video: $e')));
         _manager.close();
       }
     }
   }
 
-  Future<void> _buildPlayerWithStream(MuxedStreamInfo streamInfo,
-      {Duration startAt = Duration.zero}) async {
+  Future<void> _buildPlayerWithStream(MuxedStreamInfo streamInfo, {Duration startAt = Duration.zero}) async {
     if (!mounted) return;
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() { _isLoading = true; });
 
     try {
-      _disposeControllers();
+      // LIMPIEZA TOTAL de los controladores de vídeo ANTES de crear los nuevos
+      _disposeControllers(); 
 
       _videoPlayerController = VideoPlayerController.networkUrl(streamInfo.url);
       await _videoPlayerController!.initialize();
       await _videoPlayerController!.seekTo(startAt);
 
-      if (mounted) {
-        _manager.setVideoData(
-          controller: _videoPlayerController!,
-          title: _videoTitle,
-          thumbnailUrl: _video!.thumbnails.mediumResUrl,
-          channelTitle: _video!.author,
-          duration: _video!.duration ?? Duration.zero,
-        );
+      _chewieController = ChewieController(
+        videoPlayerController: _videoPlayerController!,
+        autoPlay: true,
+        looping: false,
+        aspectRatio: 16 / 9,
+      );
+      
+      if (mounted) setState(() { _isLoading = false; });
 
-        _chewieController = ChewieController(
-          videoPlayerController: _videoPlayerController!,
-          autoPlay: true,
-          looping: false,
-          aspectRatio: 16 / 9,
-          allowFullScreen: true,
-          allowedScreenSleep: false,
-          autoInitialize: true,
-        );
-
-        _selectedStreamInfo = streamInfo;
-
-        setState(() {
-          _isLoading = false;
-        });
-      }
     } catch (e) {
-      log('Error building player: $e');
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cambiar de calidad: $e')),
-        );
+        setState(() { _isLoading = false; });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al cambiar de calidad: $e')));
       }
     }
   }
 
   Future<void> _changeQuality(MuxedStreamInfo newStreamInfo) async {
-    if (_selectedStreamInfo?.videoQuality == newStreamInfo.videoQuality) {
-      return;
-    }
-
-    final currentPosition = await _videoPlayerController?.position ?? Duration.zero;
+    if (_selectedStreamInfo?.videoQuality == newStreamInfo.videoQuality) return;
+    final currentPosition = _videoPlayerController?.value.position ?? Duration.zero;
     await _buildPlayerWithStream(newStreamInfo, startAt: currentPosition);
   }
+  
+  // ... (el resto de la UI permanece igual) ...
 
+  @override
+  void didUpdateWidget(covariant VideoPlayerPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.videoId != widget.videoId) {
+      // Al cambiar de vídeo, se inicia la cadena de limpieza y reinicio
+      _manager.play(widget.videoId).then((_) => _initializePlayer());
+    }
+  }
+
+  // DESTRUCTOR DE CONTROLADORES DE VIDEO - RESPONSABILIDAD ÚNICA
+  void _disposeControllers() {
+    _videoPlayerController?.pause();
+    _videoPlayerController?.dispose();
+    _videoPlayerController = null;
+    _chewieController?.dispose();
+    _chewieController = null;
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // CADENA DE LIMPIEZA FINAL: La página destruye lo suyo y luego ordena al manager destruir lo suyo
+    _disposeControllers();
+    _manager.close(); 
+    _ytExplode.close();
+    super.dispose();
+  }
+
+  // ... (El resto del código de UI, como _buildMaximizedLayout, _buildMinimizedLayout, etc., no necesita cambios)
+   @override
+  Widget build(BuildContext context) {
+    final isMinimized = context.select((VideoPlayerManager m) => m.isMinimized);
+    
+    const double minimizedWidth = 250.0;
+    const double minimizedHeight = 140.6;
+
+    if (_isLoading && !isMinimized) {
+      return const Scaffold(
+        body: Center(child: CupertinoActivityIndicator()),
+      );
+    }
+
+    if (_chewieController == null || _videoPlayerController == null || !_videoPlayerController!.value.isInitialized) {
+       return const Scaffold(
+        body: Center(child: CupertinoActivityIndicator()),
+      );
+    }
+
+    final playerWidget = Chewie(controller: _chewieController!);
+
+    return AnimatedPositioned(
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+      top: isMinimized ? _dragOffset.dy : 0,
+      left: isMinimized ? _dragOffset.dx : 0,
+      right: isMinimized ? null : 0,
+      bottom: isMinimized ? null : 0,
+      child: Draggable(
+        feedback: Material(elevation: 8.0, child: _buildMinimizedLayout(minimizedWidth, minimizedHeight, playerWidget)),
+        maxSimultaneousDrags: isMinimized ? 1 : 0,
+        onDragEnd: (details) {
+          final size = MediaQuery.of(context).size;
+          double dx = details.offset.dx;
+          double dy = details.offset.dy;
+          if (dx < 0) dx = 0;
+          if (dx > size.width - minimizedWidth) dx = size.width - minimizedWidth;
+          if (dy < 0) dy = 0;
+          if (dy > size.height - minimizedHeight) dy = size.height - minimizedHeight;
+          setState(() { _dragOffset = Offset(dx, dy); });
+        },
+        child: _buildPlayerContent(isMinimized, minimizedWidth, minimizedHeight, playerWidget),
+      ),
+    );
+  }
+
+  Widget _buildPlayerContent(bool isMinimized, double minWidth, double minHeight, Widget player) {
+    final screenSize = MediaQuery.of(context).size;
+    return GestureDetector(
+      onTap: isMinimized ? _manager.maximize : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        width: isMinimized ? minWidth : screenSize.width,
+        height: isMinimized ? minHeight : screenSize.height,
+        child: Material(
+          elevation: 4.0,
+          child: isMinimized ? _buildMinimizedLayout(minWidth, minHeight, player) : _buildMaximizedLayout(player),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMaximizedLayout(Widget player) {
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                AspectRatio(aspectRatio: 16 / 9, child: _isLoading ? const Center(child: CupertinoActivityIndicator()) : player),
+                Positioned(
+                  top: 8, left: 8,
+                  child: CupertinoButton(padding: EdgeInsets.zero, onPressed: _manager.minimize, child: const Icon(CupertinoIcons.chevron_down, color: Colors.white, size: 30)),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Text(_videoTitle, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  ),
+                  const SizedBox(width: 16),
+                  DownloadButton(videoId: widget.videoId, video: _video),
+                  IconButton(
+                    icon: const Icon(Icons.favorite_border), tooltip: 'Añadir a favoritos',
+                    onPressed: () {
+                      if (_video == null) return;
+                      final playlistService = context.read<PlaylistService>();
+                      final videoHistory = VideoHistory(videoId: _video!.id.value, title: _video!.title, thumbnailUrl: _video!.thumbnails.mediumResUrl, channelTitle: _video!.author, watchedAt: DateTime.now());
+                      playlistService.addVideoToPlaylist('Videos favoritos', videoHistory);
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Añadido a favoritos')));
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.settings), tooltip: 'Cambiar Calidad',
+                    onPressed: () => _showQualityOptions(context),
+                  ),
+                ],
+              ),
+            ),
+            const Padding(padding: EdgeInsets.symmetric(horizontal: 16.0), child: Text('Videos Relacionados', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+            Expanded(
+              child: ListView.builder(
+                itemCount: _relatedVideos.length,
+                itemBuilder: (context, index) {
+                  final video = _relatedVideos[index];
+                  return InkWell(
+                    onTap: () => context.read<VideoPlayerManager>().play(video.id.value),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      child: Row(
+                        children: [
+                          Image.network(video.thumbnails.mediumResUrl, width: 120, height: 67.5, fit: BoxFit.cover),
+                          const SizedBox(width: 12),
+                          Expanded(child: Text(video.title, maxLines: 2, overflow: TextOverflow.ellipsis)),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
   void _showQualityOptions(BuildContext context) {
     showDialog(
       context: context,
@@ -172,18 +299,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: _muxedStreamInfos.map((streamInfo) {
-                final isSelected =
-                    streamInfo.videoQuality == _selectedStreamInfo?.videoQuality;
+                final isSelected = streamInfo.videoQuality == _selectedStreamInfo?.videoQuality;
                 return ListTile(
                   title: Text(
                     '${streamInfo.videoResolution.height}p',
-                    style: TextStyle(
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.normal,
-                      color: isSelected
-                          ? Theme.of(context).primaryColor
-                          : null,
-                    ),
+                    style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal, color: isSelected ? Theme.of(context).primaryColor : null),
                   ),
                   onTap: () {
                     Navigator.of(context).pop();
@@ -202,251 +322,11 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     try {
       final relatedVideos = await _ytExplode.videos.getRelatedVideos(video);
       if (mounted) {
-        setState(() {
-          _relatedVideos = relatedVideos?.toList() ?? [];
-        });
+        setState(() { _relatedVideos = relatedVideos?.toList() ?? []; });
       }
     } catch (e) {
-      log('Error fetching related videos: $e');
+      log('Error al buscar vídeos relacionados: $e');
     }
-  }
-
-  @override
-  void didUpdateWidget(covariant VideoPlayerPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.videoId != widget.videoId) {
-      _disposeControllers();
-      _initializePlayer();
-    }
-  }
-
-  void _disposeControllers() {
-    _videoPlayerController?.dispose();
-    _chewieController?.dispose();
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _disposeControllers();
-    _ytExplode.close();
-    _manager.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isMinimized = _manager.isMinimized;
-
-    const double minimizedWidth = 250.0;
-    const double minimizedHeight = 140.6;
-
-    if (_isLoading && !isMinimized) {
-      return const Scaffold(
-        body: Center(
-          child: CupertinoActivityIndicator(),
-        ),
-      );
-    }
-
-    if (_chewieController == null || !_chewieController!.videoPlayerController.value.isInitialized) {
-       return const Scaffold(
-        body: Center(
-          child: CupertinoActivityIndicator(),
-        ),
-      );
-    }
-
-    final playerWidget = Chewie(controller: _chewieController!);
-
-    return AnimatedPositioned(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      top: isMinimized ? _dragOffset.dy : 0,
-      left: isMinimized ? _dragOffset.dx : 0,
-      right: isMinimized ? null : 0,
-      bottom: isMinimized ? null : 0,
-      child: Draggable(
-        feedback: Material(
-          elevation: 8.0,
-          child:
-              _buildMinimizedLayout(minimizedWidth, minimizedHeight, playerWidget),
-        ),
-        maxSimultaneousDrags: isMinimized ? 1 : 0,
-        onDragEnd: (details) {
-          final size = MediaQuery.of(context).size;
-          double dx = details.offset.dx;
-          double dy = details.offset.dy;
-
-          if (dx < 0) dx = 0;
-          if (dx > size.width - minimizedWidth) {
-            dx = size.width - minimizedWidth;
-          }
-          if (dy < 0) dy = 0;
-          if (dy > size.height - minimizedHeight) {
-            dy = size.height - minimizedHeight;
-          }
-
-          setState(() {
-            _dragOffset = Offset(dx, dy);
-          });
-        },
-        child: _buildPlayerContent(
-            isMinimized, minimizedWidth, minimizedHeight, playerWidget),
-      ),
-    );
-  }
-
-  Widget _buildPlayerContent(
-      bool isMinimized, double minWidth, double minHeight, Widget player) {
-    final screenSize = MediaQuery.of(context).size;
-
-    return GestureDetector(
-      onTap: isMinimized ? _manager.maximize : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        width: isMinimized ? minWidth : screenSize.width,
-        height: isMinimized ? minHeight : screenSize.height,
-        child: Material(
-          elevation: 4.0,
-          child: isMinimized
-              ? _buildMinimizedLayout(minWidth, minHeight, player)
-              : _buildMaximizedLayout(player),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMaximizedLayout(Widget player) {
-    final playlistService = Provider.of<PlaylistService>(context, listen: false);
-
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                AspectRatio(
-                  aspectRatio: 16 / 9,
-                  child: _isLoading
-                      ? const Center(child: CupertinoActivityIndicator())
-                      : player,
-                ),
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: _manager.minimize,
-                    child: const Icon(CupertinoIcons.chevron_down,
-                        color: Colors.white, size: 30),
-                  ),
-                ),
-              ],
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      _videoTitle,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  DownloadButton(videoId: widget.videoId, video: _video),
-                   IconButton(
-                    icon: const Icon(Icons.favorite_border),
-                    tooltip: 'Añadir a favoritos',
-                    onPressed: () {
-                      if (_video == null) return;
-                      final videoHistory = VideoHistory(
-                        videoId: _video!.id.value,
-                        title: _video!.title,
-                        thumbnailUrl: _video!.thumbnails.mediumResUrl,
-                        channelTitle: _video!.author,
-                        watchedAt: DateTime.now(),
-                      );
-                      playlistService.addVideoToPlaylist('Videos favoritos', videoHistory);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Añadido a favoritos')),
-                      );
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.settings),
-                    tooltip: 'Cambiar Calidad',
-                    onPressed: () {
-                      if (_muxedStreamInfos.isNotEmpty) {
-                        _showQualityOptions(context);
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content:
-                                  Text('No hay otras calidades disponibles.')),
-                        );
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.0),
-              child: Text(
-                'Videos Relacionados',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _relatedVideos.length,
-                itemBuilder: (context, index) {
-                  final video = _relatedVideos[index];
-                  return InkWell(
-                    onTap: () {
-                      _manager.play(video.id.value);
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16.0, vertical: 8.0),
-                      child: Row(
-                        children: [
-                          Image.network(
-                            video.thumbnails.mediumResUrl,
-                            width: 120,
-                            height: 67.5,
-                            fit: BoxFit.cover,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              video.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildMinimizedLayout(double width, double height, Widget player) {
@@ -457,26 +337,8 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
         alignment: Alignment.center,
         children: [
           player,
-          Positioned(
-            top: 0,
-            right: 0,
-            child: CupertinoButton(
-              padding: const EdgeInsets.all(4),
-              onPressed: () async => await _manager.close(),
-              child:
-                  const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20),
-            ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            child: CupertinoButton(
-              padding: const EdgeInsets.all(4),
-              onPressed: _manager.maximize,
-              child:
-                  const Icon(Icons.open_in_full, color: Colors.white, size: 20),
-            ),
-          ),
+          Positioned(top: 0, right: 0, child: CupertinoButton(padding: const EdgeInsets.all(4), onPressed: _manager.close, child: const Icon(CupertinoIcons.xmark, color: Colors.white, size: 20))),
+          Positioned(top: 0, left: 0, child: CupertinoButton(padding: const EdgeInsets.all(4), onPressed: _manager.maximize, child: const Icon(Icons.open_in_full, color: Colors.white, size: 20))),
         ],
       ),
     );
@@ -499,10 +361,7 @@ class DownloadButton extends StatelessWidget {
         final progress = downloadService.getDownloadProgress(videoId);
         return Stack(
           alignment: Alignment.center,
-          children: [
-            CircularProgressIndicator(value: progress),
-            const Icon(Icons.downloading, size: 20),
-          ],
+          children: [CircularProgressIndicator(value: progress), const Icon(Icons.downloading, size: 20)],
         );
       case DownloadStatus.downloaded:
         return const Icon(Icons.check_circle, color: Colors.green);
@@ -511,16 +370,10 @@ class DownloadButton extends StatelessWidget {
       case DownloadStatus.notDownloaded:
       default:
         return IconButton(
-          icon: const Icon(Icons.download),
-          tooltip: 'Descargar video',
+          icon: const Icon(Icons.download), tooltip: 'Descargar video',
           onPressed: () {
             if (video == null) return;
-            downloadService.downloadVideo(
-              videoId,
-              video!.title,
-              video!.thumbnails.mediumResUrl,
-              video!.author,
-            );
+            downloadService.downloadVideo(videoId, video!.title, video!.thumbnails.mediumResUrl, video!.author);
           },
         );
     }
