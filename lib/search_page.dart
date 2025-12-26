@@ -56,14 +56,14 @@ class _SearchPageState extends State<SearchPage> {
                   leading: Image.network(video.thumbnails.mediumResUrl),
                   title: Text(video.title),
                   subtitle: Text(video.author),
-                  onTap: () {
+                  onTap: () async {
                     final mediaItem = MediaItem(
                       id: video.id.value,
                       title: video.title,
                       artist: video.author,
                       artUri: Uri.parse(video.thumbnails.highResUrl),
                     );
-                    audioHandler.addQueueItem(mediaItem);
+                    await audioHandler.addQueueItem(mediaItem);
                     audioHandler.play();
                   },
                 );

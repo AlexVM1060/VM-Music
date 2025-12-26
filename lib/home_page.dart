@@ -113,8 +113,8 @@ class MusicListPage extends StatelessWidget {
             leading: Image.network(song.artUri.toString()),
             title: Text(song.title),
             subtitle: Text(song.artist ?? ''),
-            onTap: () {
-              audioHandler.addQueueItem(song);
+            onTap: () async {
+              await audioHandler.addQueueItem(song);
               audioHandler.play();
             },
           );
