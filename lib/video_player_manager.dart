@@ -10,34 +10,51 @@ import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 class VideoPlayerManager extends ChangeNotifier {
   final HistoryService _historyService = HistoryService();
   final AudioHandler _audioHandler;
-  final YoutubeExplode _ytExplode = YoutubeExplode();
 
   String? _currentVideoId;
+  VideoPlayerController? _videoPlayerController;
+  String? _videoStreamUrl;
+  String? _videoTitle;
+  String? _videoThumbnailUrl;
+  String? _videoChannelTitle;
+
   bool _isMinimized = false;
   bool _isFullScreen = false;
   bool _isInBackground = false;
-
-  // El manager YA NO es dueño del VideoPlayerController
 
   VideoPlayerManager(this._audioHandler);
 
   String? get currentVideoId => _currentVideoId;
   bool get isMinimized => _isMinimized;
   bool get isFullScreen => _isFullScreen;
+  VideoPlayerController? get videoPlayerController => _videoPlayerController;
+
+  void setVideoData({
+    required VideoPlayerController controller,
+    required String streamUrl,
+    required String title,
+    required String thumbnailUrl,
+    required String channelTitle,
+  }) {
+    _videoPlayerController = controller;
+    _videoStreamUrl = streamUrl;
+    _videoTitle = title;
+    _videoThumbnailUrl = thumbnailUrl;
+    _videoChannelTitle = channelTitle;
+  }
 
   Future<void> play(String videoId) async {
-    // 1. Notifica que se está reproduciendo un nuevo vídeo
+    if (_currentVideoId != null) {
+      await close();
+    }
     _currentVideoId = videoId;
     _isMinimized = false;
     _isFullScreen = false;
     _isInBackground = false;
 
-    // 2. Detiene cualquier audio de fondo que pudiera estar sonando de un vídeo anterior
-    await _audioHandler.stop();
-
-    // 3. Añade al historial
+    final yt = YoutubeExplode();
     try {
-      final video = await _ytExplode.videos.get(videoId);
+      final video = await yt.videos.get(videoId);
       _historyService.addVideoToHistory(
         VideoHistory(
           videoId: video.id.value,
@@ -47,52 +64,46 @@ class VideoPlayerManager extends ChangeNotifier {
           watchedAt: DateTime.now(),
         ),
       );
-    } catch (e) {
-      // No hacer nada si falla
+    } finally {
+      yt.close();
     }
 
     notifyListeners();
   }
 
-  Future<void> switchToBackgroundAudio(VideoPlayerController videoController, Video video) async {
-    if (!videoController.value.isInitialized || _currentVideoId == null) {
-      return;
-    }
+  Future<void> switchToBackgroundAudio() async {
+    if (_videoPlayerController == null || _videoStreamUrl == null) return;
 
-    final position = videoController.value.position;
-    await videoController.pause();
+    final position = await _videoPlayerController!.position;
+    if (position == null) return;
 
-    try {
-      final manifest = await _ytExplode.videos.streamsClient.getManifest(_currentVideoId!);
-      final audioUrl = manifest.audioOnly.sortByBitrate().last.url;
+    await _videoPlayerController!.pause();
 
-      await _audioHandler.customAction('setSource', {
-        'url': audioUrl.toString(),
-        'title': video.title,
-        'artist': video.author,
-        'artUri': video.thumbnails.mediumResUrl,
-        'duration': video.duration?.inMilliseconds ?? 0,
-      });
+    final mediaItem = MediaItem(
+      id: _videoStreamUrl!,
+      title: _videoTitle ?? 'Video sin título',
+      artist: _videoChannelTitle,
+      artUri: _videoThumbnailUrl != null ? Uri.parse(_videoThumbnailUrl!) : null,
+      duration: _videoPlayerController!.value.duration,
+    );
 
-      await _audioHandler.seek(position);
-      await _audioHandler.play();
+    await _audioHandler.addQueueItem(mediaItem);
+    await _audioHandler.seek(position);
+    await _audioHandler.play();
 
-      _isInBackground = true;
-    } catch (e) {
-      // Si algo falla, reanuda el vídeo
-       await videoController.play();
-    }
+    _isInBackground = true;
   }
 
-  Future<void> switchToForegroundVideo(VideoPlayerController videoController) async {
-    if (!_isInBackground) return;
+  Future<void> switchToForegroundVideo() async {
+    if (!_isInBackground || _videoPlayerController == null) return;
 
     final backgroundPosition = _audioHandler.playbackState.value.updatePosition;
-    await _audioHandler.pause();
 
-    if (videoController.value.isInitialized) {
-      await videoController.seekTo(backgroundPosition);
-      await videoController.play();
+    await _audioHandler.stop();
+
+    if (_videoPlayerController?.value.isInitialized ?? false) {
+      await _videoPlayerController!.seekTo(backgroundPosition);
+      await _videoPlayerController!.play();
     }
 
     _isInBackground = false;
@@ -113,14 +124,13 @@ class VideoPlayerManager extends ChangeNotifier {
   }
 
   Future<void> close() async {
-    // LIMPIEZA TOTAL del manager
+    await _videoPlayerController?.pause();
+    await _audioHandler.stop();
+
     _currentVideoId = null;
     _isMinimized = false;
     _isFullScreen = false;
     _isInBackground = false;
-    
-    // El manager ordena al AudioHandler que se detenga y libere todo
-    await _audioHandler.stop();
 
     notifyListeners();
   }
@@ -134,7 +144,6 @@ class VideoPlayerManager extends ChangeNotifier {
 
   @override
   void dispose() {
-    _ytExplode.close();
     close();
     super.dispose();
   }

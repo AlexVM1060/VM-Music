@@ -29,6 +29,8 @@ dependencies:
   dio: ^5.9.0
   collection: ^1.19.1
   http: ^1.6.0
+  rxdart: ^0.28.0
+  palette_generator: ^0.3.3+7
 
 dev_dependencies:
   flutter_test:

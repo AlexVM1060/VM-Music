@@ -1,23 +1,60 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
-Future<AudioHandler> initAudioService() async {
+Future<MyAudioHandler> initAudioService() async {
   return await AudioService.init(
     builder: () => MyAudioHandler(),
-    config: AudioServiceConfig( // <-- PALABRA CLAVE 'CONST' ELIMINADA
+    config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.mycompany.myapp.audio',
-      androidNotificationChannelName: 'Audio Service',
+      androidNotificationChannelName: 'Music Player',
       androidNotificationOngoing: true,
-      androidStopForegroundOnPause: false,
+      androidStopForegroundOnPause: true,
     ),
   );
 }
 
 class MyAudioHandler extends BaseAudioHandler {
   final _player = AudioPlayer();
+  final _playlist = <AudioSource>[];
 
   MyAudioHandler() {
     _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
+    _loadEmptyPlaylist();
+  }
+
+  Future<void> _loadEmptyPlaylist() async {
+    try {
+      await _player.setAudioSource(ConcatenatingAudioSource(children: _playlist));
+    } catch (e) {
+      // Manejar el error
+    }
+  }
+
+  @override
+  Future<void> addQueueItems(List<MediaItem> mediaItems) async {
+    final yt = YoutubeExplode();
+    for (var item in mediaItems) {
+      final streamInfo = await yt.videos.streamsClient.getManifest(item.id);
+      final audioStream = streamInfo.audioOnly.withHighestBitrate();
+      final audioSource = AudioSource.uri(audioStream.url);
+      _playlist.add(audioSource);
+    }
+    final newQueue = queue.value..addAll(mediaItems);
+    queue.add(newQueue);
+    await _player.setAudioSource(ConcatenatingAudioSource(children: _playlist));
+  }
+
+  @override
+  Future<void> addQueueItem(MediaItem mediaItem) async {
+    final yt = YoutubeExplode();
+    final streamInfo = await yt.videos.streamsClient.getManifest(mediaItem.id);
+    final audioStream = streamInfo.audioOnly.withHighestBitrate();
+    final audioSource = AudioSource.uri(audioStream.url, tag: mediaItem);
+    _playlist.add(audioSource);
+    final newQueue = queue.value..add(mediaItem);
+    queue.add(newQueue);
+    await _player.setAudioSource(ConcatenatingAudioSource(children: _playlist));
   }
 
   @override
@@ -27,34 +64,17 @@ class MyAudioHandler extends BaseAudioHandler {
   Future<void> pause() => _player.pause();
 
   @override
+  Future<void> skipToNext() => _player.seekToNext();
+
+  @override
+  Future<void> skipToPrevious() => _player.seekToPrevious();
+
+  @override
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
-  Future<void> stop() async {
-    await _player.stop();
-    mediaItem.add(null);
-  }
-
-  @override
-  Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
-    if (name == 'setSource') {
-      extras ??= {};
-      final mediaItem = MediaItem(
-        id: extras['url'] ?? '',
-        title: extras['title'] ?? 'Video sin título',
-        artist: extras['artist'],
-        artUri: extras['artUri'] != null ? Uri.parse(extras['artUri']) : null,
-        duration: Duration(milliseconds: extras['duration'] ?? 0),
-      );
-      this.mediaItem.add(mediaItem);
-      try {
-        if (extras['url'] != null) {
-          await _player.setUrl(extras['url']);
-        }
-      } catch (e) {
-        // Manejar error
-      }
-    }
+  Future<void> skipToQueueItem(int index) async {
+    await _player.seek(Duration.zero, index: index);
   }
 
   PlaybackState _transformEvent(PlaybackEvent event) {
@@ -71,27 +91,18 @@ class MyAudioHandler extends BaseAudioHandler {
         MediaAction.seekBackward,
       },
       androidCompactActionIndices: const [0, 1, 3],
-      processingState: _mapProcessingState(_player.processingState),
+      processingState: {
+        ProcessingState.idle: AudioProcessingState.idle,
+        ProcessingState.loading: AudioProcessingState.loading,
+        ProcessingState.buffering: AudioProcessingState.buffering,
+        ProcessingState.ready: AudioProcessingState.ready,
+        ProcessingState.completed: AudioProcessingState.completed,
+      }[_player.processingState]!,
       playing: _player.playing,
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
       speed: _player.speed,
       queueIndex: event.currentIndex,
     );
-  }
-
-  AudioProcessingState _mapProcessingState(ProcessingState processingState) {
-    switch (processingState) {
-      case ProcessingState.idle:
-        return AudioProcessingState.idle;
-      case ProcessingState.loading:
-        return AudioProcessingState.loading;
-      case ProcessingState.buffering:
-        return AudioProcessingState.buffering;
-      case ProcessingState.ready:
-        return AudioProcessingState.ready;
-      case ProcessingState.completed:
-        return AudioProcessingState.completed;
-    }
   }
 }
