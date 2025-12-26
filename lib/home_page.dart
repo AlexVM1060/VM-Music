@@ -114,8 +114,14 @@ class MusicListPage extends StatelessWidget {
             title: Text(song.title),
             subtitle: Text(song.artist ?? ''),
             onTap: () async {
+              final currentQueue = audioHandler.queue.value;
               await audioHandler.addQueueItem(song);
+              await audioHandler.skipToQueueItem(currentQueue.length);
               audioHandler.play();
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const NowPlayingScreen()));
             },
           );
         },

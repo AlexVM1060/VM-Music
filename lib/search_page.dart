@@ -1,6 +1,7 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:myapp/main.dart';
+import 'package:myapp/now_playing_screen.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
 
 class SearchPage extends StatefulWidget {
@@ -63,8 +64,15 @@ class _SearchPageState extends State<SearchPage> {
                       artist: video.author,
                       artUri: Uri.parse(video.thumbnails.highResUrl),
                     );
+                    final currentQueue = audioHandler.queue.value;
                     await audioHandler.addQueueItem(mediaItem);
+                    await audioHandler.skipToQueueItem(currentQueue.length);
                     audioHandler.play();
+                    Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) =>
+                                const NowPlayingScreen()));
                   },
                 );
               },
